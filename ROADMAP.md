@@ -8,7 +8,7 @@ Tasks are worked top to bottom, one per day. Add new `- [ ]` lines at any time.
 Pure data-structure modules come first because they are the easiest to get right;
 process-based modules follow.
 
-- [ ] Scheduler (`PoisonOS.Scheduler`): a pure round-robin scheduler struct with new, enqueue, next, tick and remove
+- [x] Scheduler (`PoisonOS.Scheduler`): a pure round-robin scheduler struct with new, enqueue, next, tick and remove
 - [ ] Memory manager (`PoisonOS.Memory`): a pure page-allocator simulation with new, alloc, free and stats
 - [ ] Virtual filesystem (`PoisonOS.FS`): an in-memory tree with mkdir, write, read, ls and rm as a pure data structure
 - [ ] Shell parser (`PoisonOS.Shell.Parser`): parse a command line into a command and args, handling quoted arguments
