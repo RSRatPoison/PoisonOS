@@ -37,7 +37,7 @@ jobs:
 
       - name: Implement next roadmap task
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           MODEL: ${{ vars.MODEL }}
           FALLBACK_MODEL: ${{ vars.FALLBACK_MODEL }}
           MAX_CONTEXT_CHARS: ${{ vars.MAX_CONTEXT_CHARS }}
