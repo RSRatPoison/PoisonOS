@@ -61,7 +61,8 @@ Rules:
 - The commit message is one plain imperative line under 72 characters.
 
 Elixir rules (these mistakes have broken earlier runs):
-- A module that runs as a process must `use Agent`, `use GenServer` or `use Supervisor`, so that child_spec/1 exists. Give start_link/1 an opts argument and honour an optional `:name` in opts.
+- A module that runs as a process must `use Agent`, `use GenServer` or `use Supervisor`, which defines child_spec/1 for you. Never write child_spec/1 or `@impl true` for it by hand. Give start_link/1 an opts argument and honour an optional `:name` in opts.
+- Prefer pure functions and plain data structures over processes wherever the task allows it.
 - Never define a @type with the name of a built-in type (pid, reference, port, atom, binary, list, map, tuple, term, string, and so on). Use names like process_pid or entry instead.
 - In tests, start processes with `start_supervised!({Module, name: unique_name})`, using a unique name per test, so tests cannot clash. Do not use sleeps.
 - Warnings are errors: no unused variables, aliases or imports. Prefix intentionally unused variables with an underscore.
@@ -98,7 +99,7 @@ def mark_done(task):
 
 
 def gather_context():
-    files = run(["git", "ls-files"])[1].split()
+    files = run(["git", "ls-files", "--cached", "--others", "--exclude-standard"])[1].split()
     sources = sorted(
         (f for f in files if f.endswith((".ex", ".exs"))),
         key=lambda f: (f.startswith("test/"), f != "mix.exs", f),
@@ -239,19 +240,24 @@ def main():
         return 0
     print(f"Task: {task}")
 
-    tree, context = gather_context()
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": f"Task: {task}\n\nRepository files:\n{tree}\n\nCurrent source:\n{context}",
-        },
-    ]
-
-    base_messages = list(messages)
     plan = None
+    error = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         print(f"Attempt {attempt}")
+        # Rebuild the prompt from what is on disk right now. Files written by an
+        # earlier attempt stay in place, so the model can fix just one file.
+        tree, context = gather_context()
+        content = f"Task: {task}\n\nRepository files:\n{tree}\n\nCurrent source (as on disk now):\n{context}"
+        if error:
+            content += (
+                f"\n\nYour previous attempt failed:\n{error}\n\n"
+                "Fix it. The files above are exactly what is on disk. Send only the files "
+                "you need to change, each one complete, using the same paths as before."
+            )
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": content},
+        ]
         reply = call_model(messages)
         if reply is None:
             reset_worktree()
@@ -265,17 +271,8 @@ def main():
         if not error:
             break
         print(error)
-        reset_worktree()
-        # Keep only the latest reply and error so the request stays small
-        # (the free tier limits tokens per request and per minute).
-        messages = base_messages + [
-            {"role": "assistant", "content": reply},
-            {
-                "role": "user",
-                "content": f"That attempt failed:\n{error}\nFix it and reply again in the same format, with every file complete.",
-            },
-        ]
     else:
+        reset_worktree()
         print("All attempts failed. Nothing committed.")
         return 1
 
