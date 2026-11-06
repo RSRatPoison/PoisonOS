@@ -8,7 +8,8 @@ defmodule PoisonOS.FS do
   * Files:      `%{type: :file, content: binary()}`
 
   All functions are pure and return `{:ok, new_fs}` on success or
-  `{:error, reason}` on failure.
+  `{:error, reason}` on failure.  The module does **not** perform any I/O;
+  it only manipulates the in‑memory structure.
   """
 
   @type vnode ::
@@ -17,6 +18,16 @@ defmodule PoisonOS.FS do
 
   @type t :: vnode()
   @type path :: [String.t()]
+
+  @type error_reason ::
+          :invalid_path
+          | :file_exists
+          | :not_a_directory
+          | :no_such_directory
+          | :no_such_file
+          | :no_such_entry
+          | :directory_not_empty
+          | :is_directory
 
   @doc "Creates an empty filesystem."
   @spec new() :: t()
@@ -29,8 +40,15 @@ defmodule PoisonOS.FS do
 
   Returns `{:ok, fs}` on success or `{:error, reason}` if the path is
   invalid or a component already exists as a file.
+
+  ## Errors
+
+    * `:invalid_path` – the path is empty.
+    * `:file_exists` – a file already exists at the target location.
+    * `:not_a_directory` – a component in the path is a file.
+    * `:no_such_directory` – an intermediate directory does not exist.
   """
-  @spec mkdir(path(), t()) :: {:ok, t()} | {:error, term()}
+  @spec mkdir(path(), t()) :: {:ok, t()} | {:error, error_reason()}
   def mkdir([], _fs), do: {:error, :invalid_path}
 
   def mkdir([name], %{:type => :dir, :children => children} = fs) do
@@ -67,8 +85,14 @@ defmodule PoisonOS.FS do
   @doc """
   Writes `content` to a file at `path`. Intermediate directories must exist.
   Creates the file if it does not exist, overwriting any existing file.
+
+  ## Errors
+
+    * `:invalid_path` – the path is empty.
+    * `:not_a_directory` – a component in the path is a file.
+    * `:no_such_directory` – an intermediate directory does not exist.
   """
-  @spec write(path(), binary(), t()) :: {:ok, t()} | {:error, term()}
+  @spec write(path(), binary(), t()) :: {:ok, t()} | {:error, error_reason()}
   def write([], _content, _fs), do: {:error, :invalid_path}
 
   def write([name], content, %{:type => :dir, :children => _children} = fs) do
@@ -95,8 +119,15 @@ defmodule PoisonOS.FS do
 
   @doc """
   Reads the content of the file at `path`.
+
+  ## Errors
+
+    * `:invalid_path` – the path is empty or does not point to a file.
+    * `:is_directory` – the target is a directory.
+    * `:no_such_file` – the file does not exist.
+    * `:not_a_directory` – a component in the path is a file.
   """
-  @spec read(path(), t()) :: {:ok, binary()} | {:error, term()}
+  @spec read(path(), t()) :: {:ok, binary()} | {:error, error_reason()}
   def read([name], %{:type => :dir, :children => children}) do
     case Map.fetch(children, name) do
       {:ok, %{type: :file, content: content}} -> {:ok, content}
@@ -118,8 +149,14 @@ defmodule PoisonOS.FS do
   @doc """
   Lists the entries (names) inside the directory at `path`.
   Returns `{:ok, [String.t()]}` sorted alphabetically.
+
+  ## Errors
+
+    * `:invalid_path` – the path does not point to a directory.
+    * `:not_a_directory` – a component in the path is a file.
+    * `:no_such_directory` – an intermediate directory does not exist.
   """
-  @spec ls(path(), t()) :: {:ok, [String.t()]} | {:error, term()}
+  @spec ls(path(), t()) :: {:ok, [String.t()]} | {:error, error_reason()}
   def ls([], %{:type => :dir, :children => children}) do
     {:ok, Map.keys(children) |> Enum.sort()}
   end
@@ -136,8 +173,16 @@ defmodule PoisonOS.FS do
 
   @doc """
   Removes a file or empty directory at `path`.
+
+  ## Errors
+
+    * `:invalid_path` – the path is empty.
+    * `:directory_not_empty` – trying to remove a non‑empty directory.
+    * `:no_such_entry` – the target does not exist.
+    * `:not_a_directory` – a component in the path is a file.
+    * `:no_such_directory` – an intermediate directory does not exist.
   """
-  @spec rm(path(), t()) :: {:ok, t()} | {:error, term()}
+  @spec rm(path(), t()) :: {:ok, t()} | {:error, error_reason()}
   def rm([], _), do: {:error, :invalid_path}
 
   def rm([name], %{:type => :dir, :children => children} = fs) do
