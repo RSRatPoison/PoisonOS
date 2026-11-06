@@ -60,8 +60,15 @@ Rules:
 - Do not mention AI, assistants, models, or code generation anywhere: not in code, comments, docs or the commit message.
 - The commit message is one plain imperative line under 72 characters.
 
-Reply with JSON only, in exactly this shape:
-{"commit_message": "...", "files": [{"path": "lib/example.ex", "content": "..."}]}"""
+Reply in exactly this plain-text format. No JSON, no markdown code fences, no extra commentary.
+Write each file exactly as it should appear on disk (backslashes, quotes and newlines are literal).
+
+COMMIT: <one-line commit message>
+=== FILE: lib/example.ex ===
+<complete file content>
+=== END FILE ===
+
+Repeat the FILE block for every file you create or change."""
 
 
 def run(cmd, timeout=600):
@@ -101,7 +108,6 @@ def gather_context():
 
 def call_model(messages):
     for model in MODELS:
-        json_mode = True
         for attempt in range(3):
             payload = {
                 "model": model,
@@ -109,8 +115,6 @@ def call_model(messages):
                 "temperature": 0.2,
                 "max_tokens": MAX_OUTPUT_TOKENS,
             }
-            if json_mode:
-                payload["response_format"] = {"type": "json_object"}
             if "gpt-oss" in model:
                 payload["reasoning_effort"] = "low"
             req = urllib.request.Request(
@@ -133,10 +137,6 @@ def call_model(messages):
                     print("Rate limited; waiting 65 seconds before retrying.")
                     time.sleep(65)
                     continue
-                if e.code == 400 and json_mode:
-                    print("Retrying without JSON mode.")
-                    json_mode = False
-                    continue
                 break
             except Exception as e:
                 print(f"{model}: {e}")
@@ -149,15 +149,33 @@ def call_model(messages):
     return None
 
 
+FILE_RE = re.compile(
+    r"^=== FILE: ([^\n]+?) ===\n(.*?)\n=== END FILE ===[ \t]*$",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def strip_fence(content):
+    lines = content.split("\n")
+    if lines and lines[0].startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines)
+
+
 def parse_reply(text):
-    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip())
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Reply was not valid JSON: {e}")
-    if not isinstance(data, dict):
-        raise ValueError("Reply must be a JSON object.")
-    return data
+    files = [
+        {"path": path.strip(), "content": strip_fence(content)}
+        for path, content in FILE_RE.findall(text)
+    ]
+    if not files:
+        raise ValueError(
+            "No files found. Use exactly: COMMIT: <message>, then for each file a line "
+            "'=== FILE: <path> ===', the complete content, and a line '=== END FILE ==='."
+        )
+    m = re.search(r"^COMMIT:[ \t]*(.+)$", text, re.MULTILINE)
+    return {"commit_message": m.group(1).strip() if m else "", "files": files}
 
 
 def safe_path(path):
@@ -236,7 +254,7 @@ def main():
             {"role": "assistant", "content": reply},
             {
                 "role": "user",
-                "content": f"That attempt failed:\n{error}\nFix it and reply with the full JSON again.",
+                "content": f"That attempt failed:\n{error}\nFix it and reply again in the same format, with every file complete.",
             },
         ]
     else:
