@@ -25,18 +25,40 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
 
-API_URL = "https://api.groq.com/openai/v1/chat/completions"
-TOKEN = os.environ.get("GROQ_API_KEY", "")
+PROVIDER = (os.environ.get("PROVIDER") or "groq").strip().lower()
+OPENROUTER_DEFAULT_MODELS = (
+    "poolside/laguna-s-2.1:free,"
+    "nvidia/nemotron-3-super-120b-a12b:free,"
+    "cohere/north-mini-code:free"
+)
+PROVIDERS = {
+    "groq": {
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "key_env": "GROQ_API_KEY",
+        "models": [
+            os.environ.get("MODEL") or "openai/gpt-oss-120b",
+            os.environ.get("FALLBACK_MODEL") or "openai/gpt-oss-20b",
+        ],
+        "optional": False,
+    },
+    "openrouter": {
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "key_env": "OPENROUTER_API_KEY",
+        "models": (os.environ.get("OPENROUTER_MODELS") or OPENROUTER_DEFAULT_MODELS).split(","),
+        "optional": True,  # a missing key skips the job instead of failing it
+    },
+}
+if PROVIDER not in PROVIDERS:
+    sys.exit(f"Unknown provider: {PROVIDER}")
+_cfg = PROVIDERS[PROVIDER]
+API_URL = _cfg["url"]
+TOKEN = os.environ.get(_cfg["key_env"], "")
+MODELS = [m.strip() for m in _cfg["models"] if m.strip()]
 if not TOKEN:
-    sys.exit("GROQ_API_KEY is not set (Settings > Secrets and variables > Actions > Secrets).")
-MODELS = [
-    m
-    for m in (
-        os.environ.get("MODEL") or "openai/gpt-oss-120b",
-        os.environ.get("FALLBACK_MODEL") or "openai/gpt-oss-20b",
-    )
-    if m
-]
+    if _cfg["optional"]:
+        print(f"::warning::{_cfg['key_env']} is not set, so this job is skipped.")
+        sys.exit(0)
+    sys.exit(f"{_cfg['key_env']} is not set (Settings > Secrets and variables > Actions > Secrets).")
 MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS") or 12000)
 MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS") or 3000)
 MAX_ATTEMPTS = 3
@@ -288,7 +310,7 @@ def call_model(messages):
                 "temperature": 0.2,
                 "max_tokens": MAX_OUTPUT_TOKENS,
             }
-            if "gpt-oss" in model:
+            if PROVIDER == "groq" and "gpt-oss" in model:
                 payload["reasoning_effort"] = "low"
             req = urllib.request.Request(
                 API_URL,
@@ -306,7 +328,7 @@ def call_model(messages):
             except urllib.error.HTTPError as e:
                 detail = e.read().decode(errors="replace")[:300]
                 print(f"{model}: HTTP {e.code} {detail}")
-                if e.code == 429 and attempt < 2:
+                if e.code == 429 and attempt < 2 and "day" not in detail.lower():
                     print("Rate limited; waiting 65 seconds before retrying.")
                     time.sleep(65)
                     continue
@@ -315,10 +337,13 @@ def call_model(messages):
                 print(f"{model}: {e}")
                 break
             try:
-                return json.loads(raw)["choices"][0]["message"]["content"]
+                content = json.loads(raw)["choices"][0]["message"]["content"]
             except (ValueError, KeyError, IndexError, TypeError):
-                print(f"{model}: unexpected body: {raw[:300]!r}")
-                break
+                content = None
+            if isinstance(content, str) and content.strip():
+                return content
+            print(f"{model}: unexpected or empty body: {raw[:300]!r}")
+            break
     return None
 
 
@@ -338,6 +363,7 @@ def strip_fence(content):
 
 
 def parse_reply(text):
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     files = [
         {"path": path.strip(), "content": strip_fence(content)}
         for path, content in FILE_RE.findall(text)
