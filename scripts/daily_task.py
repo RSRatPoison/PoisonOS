@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -17,13 +18,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
 
-API_URL = "https://models.github.ai/inference/chat/completions"
-TOKEN = os.environ.get("GITHUB_TOKEN", "")
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
+TOKEN = os.environ.get("GROQ_API_KEY", "")
+if not TOKEN:
+    sys.exit("GROQ_API_KEY is not set (Settings > Secrets and variables > Actions > Secrets).")
 MODELS = [
     m
     for m in (
-        os.environ.get("MODEL") or "openai/gpt-4.1",
-        os.environ.get("FALLBACK_MODEL") or "openai/gpt-4o-mini",
+        os.environ.get("MODEL") or "openai/gpt-oss-120b",
+        os.environ.get("FALLBACK_MODEL") or "openai/gpt-oss-20b",
     )
     if m
 ]
@@ -98,41 +101,51 @@ def gather_context():
 
 def call_model(messages):
     for model in MODELS:
-        body = json.dumps(
-            {
+        json_mode = True
+        for attempt in range(3):
+            payload = {
                 "model": model,
                 "messages": messages,
                 "temperature": 0.2,
                 "max_tokens": MAX_OUTPUT_TOKENS,
-                "response_format": {"type": "json_object"},
             }
-        ).encode()
-        req = urllib.request.Request(
-            API_URL,
-            data=body,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {TOKEN}",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "Content-Type": "application/json",
-                "User-Agent": "daily-build",
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=180) as resp:
-                raw = resp.read().decode(errors="replace")
-                ctype = resp.headers.get("Content-Type", "?")
-                print(f"{model}: HTTP {resp.status}, {ctype}, {len(raw)} bytes")
-        except urllib.error.HTTPError as e:
-            print(f"{model}: HTTP {e.code} {e.read().decode(errors='replace')[:300]}")
-            continue
-        except Exception as e:
-            print(f"{model}: {e}")
-            continue
-        try:
-            return json.loads(raw)["choices"][0]["message"]["content"]
-        except (ValueError, KeyError, IndexError, TypeError):
-            print(f"{model}: unexpected body: {raw[:300]!r}")
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
+            if "gpt-oss" in model:
+                payload["reasoning_effort"] = "low"
+            req = urllib.request.Request(
+                API_URL,
+                data=json.dumps(payload).encode(),
+                headers={
+                    "Authorization": f"Bearer {TOKEN}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "daily-build",
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=180) as resp:
+                    raw = resp.read().decode(errors="replace")
+                    print(f"{model}: HTTP {resp.status}, {len(raw)} bytes")
+            except urllib.error.HTTPError as e:
+                detail = e.read().decode(errors="replace")[:300]
+                print(f"{model}: HTTP {e.code} {detail}")
+                if e.code == 429 and attempt < 2:
+                    print("Rate limited; waiting 65 seconds before retrying.")
+                    time.sleep(65)
+                    continue
+                if e.code == 400 and json_mode:
+                    print("Retrying without JSON mode.")
+                    json_mode = False
+                    continue
+                break
+            except Exception as e:
+                print(f"{model}: {e}")
+                break
+            try:
+                return json.loads(raw)["choices"][0]["message"]["content"]
+            except (ValueError, KeyError, IndexError, TypeError):
+                print(f"{model}: unexpected body: {raw[:300]!r}")
+                break
     return None
 
 
