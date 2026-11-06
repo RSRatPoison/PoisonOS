@@ -32,7 +32,7 @@ MODELS = [
 ]
 MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS") or 12000)
 MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS") or 3000)
-MAX_ATTEMPTS = 2
+MAX_ATTEMPTS = 3
 
 ALLOWED_PREFIXES = ("lib/", "test/", "config/", "docs/")
 ALLOWED_FILES = {"README.md", "mix.exs", ".formatter.exs"}
@@ -59,6 +59,14 @@ Rules:
 - Never touch ROADMAP.md or anything under .github/ or scripts/.
 - Do not mention AI, assistants, models, or code generation anywhere: not in code, comments, docs or the commit message.
 - The commit message is one plain imperative line under 72 characters.
+
+Elixir rules (these mistakes have broken earlier runs):
+- A module that runs as a process must `use Agent`, `use GenServer` or `use Supervisor`, so that child_spec/1 exists. Give start_link/1 an opts argument and honour an optional `:name` in opts.
+- Never define a @type with the name of a built-in type (pid, reference, port, atom, binary, list, map, tuple, term, string, and so on). Use names like process_pid or entry instead.
+- In tests, start processes with `start_supervised!({Module, name: unique_name})`, using a unique name per test, so tests cannot clash. Do not use sleeps.
+- Warnings are errors: no unused variables, aliases or imports. Prefix intentionally unused variables with an underscore.
+- Only call functions that exist in Elixir's standard library or in your own modules. Check argument order and arity.
+- Keep the module small. Fewer features that work beat many that do not.
 
 Reply in exactly this plain-text format. No JSON, no markdown code fences, no extra commentary.
 Write each file exactly as it should appear on disk (backslashes, quotes and newlines are literal).
@@ -187,6 +195,13 @@ def safe_path(path):
     return path in ALLOWED_FILES or path.startswith(ALLOWED_PREFIXES)
 
 
+def shorten(out, limit=2500):
+    """Keep the start (usually the real cause) and the end of long tool output."""
+    if len(out) <= limit:
+        return out
+    return out[: limit - 700] + "\n...\n" + out[-700:]
+
+
 def apply_and_check(plan):
     """Write the files, run the checks. Returns an error string or None."""
     files = plan.get("files")
@@ -208,7 +223,7 @@ def apply_and_check(plan):
         code, out = run(cmd)
         print(f"$ {' '.join(cmd)} -> exit {code}")
         if code != 0:
-            return f"`{' '.join(cmd)}` failed:\n{out[-2000:]}"
+            return f"`{' '.join(cmd)}` failed:\n{shorten(out)}"
     return None
 
 
@@ -233,6 +248,7 @@ def main():
         },
     ]
 
+    base_messages = list(messages)
     plan = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         print(f"Attempt {attempt}")
@@ -250,7 +266,9 @@ def main():
             break
         print(error)
         reset_worktree()
-        messages += [
+        # Keep only the latest reply and error so the request stays small
+        # (the free tier limits tokens per request and per minute).
+        messages = base_messages + [
             {"role": "assistant", "content": reply},
             {
                 "role": "user",
