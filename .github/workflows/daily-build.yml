@@ -4,21 +4,49 @@ on:
   schedule:
     - cron: "17 8 * * *"
   workflow_dispatch:
+    inputs:
+      only:
+        description: "Run only one role"
+        type: choice
+        default: all
+        options:
+          - all
+          - builder
+          - tester
+          - reviewer
+          - planner
 
 permissions:
   contents: write
-  models: read
 
 concurrency:
   group: daily-build
   cancel-in-progress: false
 
 jobs:
-  build:
+  work:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        include:
+          - name: planner
+            role: planner
+          - name: builder-1
+            role: builder
+          - name: builder-2
+            role: builder
+          - name: tester
+            role: tester
+          - name: reviewer
+            role: reviewer
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Check commit identity
         env:
@@ -35,8 +63,10 @@ jobs:
           otp-version: "27"
           elixir-version: "1.18"
 
-      - name: Implement next roadmap task
+      - name: Run ${{ matrix.role }}
         env:
+          ROLE: ${{ matrix.role }}
+          ONLY_ROLE: ${{ inputs.only }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           MODEL: ${{ vars.MODEL }}
           FALLBACK_MODEL: ${{ vars.FALLBACK_MODEL }}
