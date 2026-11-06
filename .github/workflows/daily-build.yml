@@ -35,14 +35,22 @@ jobs:
         include:
           - name: planner
             role: planner
+            provider: groq
           - name: builder-1
             role: builder
+            provider: groq
           - name: builder-2
             role: builder
+            provider: groq
+          - name: builder-3
+            role: builder
+            provider: openrouter
           - name: tester
             role: tester
+            provider: groq
           - name: reviewer
             role: reviewer
+            provider: groq
     steps:
       - uses: actions/checkout@v4
         with:
@@ -67,7 +75,10 @@ jobs:
         env:
           ROLE: ${{ matrix.role }}
           ONLY_ROLE: ${{ inputs.only }}
+          PROVIDER: ${{ matrix.provider }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODELS: ${{ vars.OPENROUTER_MODELS }}
           MODEL: ${{ vars.MODEL }}
           FALLBACK_MODEL: ${{ vars.FALLBACK_MODEL }}
           MAX_CONTEXT_CHARS: ${{ vars.MAX_CONTEXT_CHARS }}
