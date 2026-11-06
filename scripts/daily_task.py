@@ -115,17 +115,24 @@ def call_model(messages):
                 "Authorization": f"Bearer {TOKEN}",
                 "X-GitHub-Api-Version": "2022-11-28",
                 "Content-Type": "application/json",
+                "User-Agent": "daily-build",
             },
         )
         try:
             with urllib.request.urlopen(req, timeout=180) as resp:
-                data = json.load(resp)
-            print(f"Model used: {model}")
-            return data["choices"][0]["message"]["content"]
+                raw = resp.read().decode(errors="replace")
+                ctype = resp.headers.get("Content-Type", "?")
+                print(f"{model}: HTTP {resp.status}, {ctype}, {len(raw)} bytes")
         except urllib.error.HTTPError as e:
             print(f"{model}: HTTP {e.code} {e.read().decode(errors='replace')[:300]}")
-        except Exception as e:  # network errors, malformed responses
+            continue
+        except Exception as e:
             print(f"{model}: {e}")
+            continue
+        try:
+            return json.loads(raw)["choices"][0]["message"]["content"]
+        except (ValueError, KeyError, IndexError, TypeError):
+            print(f"{model}: unexpected body: {raw[:300]!r}")
     return None
 
 
