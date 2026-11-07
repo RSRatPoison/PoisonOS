@@ -11,7 +11,7 @@ process-based modules follow.
 - [x] Scheduler (`PoisonOS.Scheduler`): a pure round-robin scheduler struct with new, enqueue, next, tick and remove
 - [x] Memory manager (`PoisonOS.Memory`): a pure page-allocator simulation with new, alloc, free and stats
 - [x] Virtual filesystem (`PoisonOS.FS`): an in-memory tree with mkdir, write, read, ls and rm as a pure data structure
-- [ ] Shell parser (`PoisonOS.Shell.Parser`): split a command line into a command and a list of args on spaces; text inside double quotes counts as one argument (no escapes, no single quotes). Use String.graphemes/1, not character literals
+- [x] Shell parser (`PoisonOS.Shell.Parser`): split a command line into a command and a list of args on spaces; text inside double quotes counts as one argument (no escapes, no single quotes). Use String.graphemes/1, not character literals
 - [ ] Shell built-ins (`PoisonOS.Shell`): dispatch echo, ls, cat and mkdir against the virtual filesystem
 - [ ] Process table (`PoisonOS.ProcessTable`): an Agent-backed registry of process records (pid, name, state) with register, lookup, update_state and unregister
 - [ ] IPC (`PoisonOS.IPC`): message-passing mailboxes with send, receive and broadcast
