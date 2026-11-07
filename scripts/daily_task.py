@@ -115,8 +115,15 @@ BANNED = re.compile(
     re.IGNORECASE,
 )
 CHECKS = [
-    ["mix", "format"],
+    ["mix", "format", "--migrate"],
     ["mix", "compile", "--warnings-as-errors"],
+    ["mix", "test"],
+]
+# Used on the final attempt only: code that compiles and passes its tests is kept
+# even if the compiler still warns about style. The reviewer role cleans those up.
+CHECKS_LENIENT = [
+    ["mix", "format", "--migrate"],
+    ["mix", "compile"],
     ["mix", "test"],
 ]
 WRITTEN = set()  # files written during this run (they may be rewritten on retry)
@@ -138,6 +145,11 @@ Elixir rules (these mistakes have broken earlier runs):
 - In tests, start processes with `start_supervised!({Module, name: unique_name})`, using a unique name per test, so tests cannot clash. Do not use sleeps.
 - Warnings are errors: no unused variables, aliases or imports. Prefix intentionally unused variables with an underscore.
 - Only call functions that exist in Elixir's standard library or in your own modules. Check argument order and arity.
+- Elixir character literals use ONE backslash: ?\\s is a space (never a question mark followed by a space), ?\\t is a tab, ?\\n a newline. Write them exactly like that. Better still, avoid character literals and bit-syntax parsing: for tokenizers use String.graphemes/1 or String.split/2 and compare with plain strings.
+- Bitstring types have no parentheses: write rest::binary, never rest::binary().
+- A variable whose name starts with an underscore must not be used afterwards. Use a plain name for variables you read, and an underscore name only for variables you ignore.
+- Put specific function clauses before general ones. A clause that always matches makes every later clause unreachable, which is a warning.
+- If the task is large, implement the smallest correct version that satisfies it.
 - Keep the module small. Fewer features that work beat many that do not.
 
 Reply in exactly this plain-text format. No JSON, no markdown code fences, no extra commentary.
@@ -165,7 +177,7 @@ ROLE_PROMPTS = {
     ),
     "reviewer": (
         "Your role: REVIEWER. Improve ONE existing module file named in the task: add or improve @moduledoc, "
-        "@doc and @spec, clarify private function names and comments, remove duplication. Public function "
+        "@doc and @spec, fix any compiler warnings in it, clarify private function names and comments, remove duplication. Public function "
         "names, arities and behaviour must not change, and the existing tests must still pass. Send only "
         "that one file, complete."
     ),
@@ -256,6 +268,7 @@ def pick_builder():
         or p.startswith(("lib/", "test/", "config/", "docs/")),
         "fallback": "Implement " + re.split(r"[:(]", task)[0].strip()[:60],
         "after": lambda: mark_done(task),
+        "defer": True,
     }
 
 
@@ -287,11 +300,22 @@ def pick_tester():
     }
 
 
+def files_with_warnings():
+    """Modules that currently produce compiler warnings (from a forced rebuild)."""
+    _, out = run(["mix", "compile", "--force"])
+    seen = []
+    for f in re.findall(r"(lib/[^\s:]+\.ex):\d+", out):
+        if f not in seen:
+            seen.append(f)
+    return seen
+
+
 def pick_reviewer():
     files = [f for f in lib_files() if module_name(f) not in (None, "PoisonOS")]
     if not files:
         return None
-    f = files[datetime.date.today().toordinal() % len(files)]
+    warned = [w for w in files_with_warnings() if w in files]
+    f = warned[0] if warned else files[datetime.date.today().toordinal() % len(files)]
     mod = module_name(f)
     return {
         "task": f"Improve documentation and typespecs of module {mod} ({f}) without changing its behaviour.",
@@ -452,7 +476,7 @@ def shorten(out, limit=2500):
     return out[: limit - 700] + "\n...\n" + out[-700:]
 
 
-def apply_and_check(plan, job):
+def apply_and_check(plan, job, lenient=False):
     """Write the files, run the checks. Returns an error string or None."""
     files = plan.get("files")
     if not isinstance(files, list) or not files:
@@ -474,7 +498,9 @@ def apply_and_check(plan, job):
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content if content.endswith("\n") else content + "\n")
         WRITTEN.add(path)
-    for cmd in CHECKS:
+    if lenient:
+        print("Final attempt: compiler warnings are tolerated, tests must still pass.")
+    for cmd in (CHECKS_LENIENT if lenient else CHECKS):
         code, out = run(cmd)
         print(f"$ {' '.join(cmd)} -> exit {code}")
         if code != 0:
@@ -485,6 +511,29 @@ def apply_and_check(plan, job):
 def reset_worktree():
     run(["git", "reset", "--hard", "HEAD"])
     run(["git", "clean", "-fd"])
+
+
+def defer_task(task):
+    """Move a task that keeps failing to the end of the open list, so the next run tries another."""
+    text = read("ROADMAP.md")
+    lines = text.split("\n")
+    target = f"- [ ] {task}"
+    if target not in lines:
+        return False
+    lines.remove(target)
+    opens = [i for i, l in enumerate(lines) if l.startswith("- [ ] ")]
+    if not opens:
+        return False  # it is the only open task, nothing to reorder
+    lines.insert(opens[-1] + 1, target)
+    new = "\n".join(lines)
+    if new == text:
+        return False
+    Path("ROADMAP.md").write_text(new)
+    run(["git", "add", "-A"])
+    short = re.split(r"[:(]", task)[0].strip()[:55]
+    code, out = run(["git", "commit", "-m", f"Defer roadmap task: {short}"])
+    print(out)
+    return code == 0
 
 
 def commit_message(model_msg, fallback, first_attempt):
@@ -535,7 +584,7 @@ def main():
             return 1
         try:
             plan = parse_reply(reply)
-            error = apply_and_check(plan, job)
+            error = apply_and_check(plan, job, lenient=(attempt == MAX_ATTEMPTS))
         except ValueError as e:
             error = str(e)
         if not error:
@@ -543,7 +592,10 @@ def main():
         print(error)
     else:
         reset_worktree()
-        print(f"::warning::Role '{ROLE}' failed its checks after {MAX_ATTEMPTS} attempts. Nothing committed.")
+        note = ""
+        if job.get("defer") and defer_task(task):
+            note = " The task was moved to the end of the roadmap so the next run tries a different one."
+        print(f"::warning::Role '{ROLE}' failed its checks after {MAX_ATTEMPTS} attempts.{note}")
         return 0
 
     if job["after"]:
