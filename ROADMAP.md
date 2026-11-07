@@ -12,7 +12,7 @@ process-based modules follow.
 - [x] Memory manager (`PoisonOS.Memory`): a pure page-allocator simulation with new, alloc, free and stats
 - [x] Virtual filesystem (`PoisonOS.FS`): an in-memory tree with mkdir, write, read, ls and rm as a pure data structure
 - [x] Shell parser (`PoisonOS.Shell.Parser`): split a command line into a command and a list of args on spaces; text inside double quotes counts as one argument (no escapes, no single quotes). Use String.graphemes/1, not character literals
-- [ ] IPC (`PoisonOS.IPC`): message-passing mailboxes with send, receive and broadcast
+- [x] IPC (`PoisonOS.IPC`): message-passing mailboxes with send, receive and broadcast
 - [ ] Syscall layer (`PoisonOS.Syscall`): a GenServer exposing the process table, memory and filesystem through one API
 - [ ] Application supervisor (`PoisonOS.Application`): a supervision tree starting the core services, wired in mix.exs
 - [ ] Boot sequence (`PoisonOS.Boot`): ordered startup of services with logging
