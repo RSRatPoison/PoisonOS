@@ -5,6 +5,9 @@ defmodule PoisonOS.Memory do
   The manager tracks a fixed number of pages of a given size. Allocation
   returns the next free page number, freeing releases it, and `stats/1`
   reports total, used and free page counts.
+
+  The implementation is immutable – each operation returns a new `%PoisonOS.Memory{}` struct
+  representing the updated state.
   """
 
   defstruct total_pages: 0,
@@ -20,10 +23,10 @@ defmodule PoisonOS.Memory do
   @doc """
   Creates a new memory manager.
 
-  * `total_pages` – total number of pages available.
-  * `page_size` – size of each page in bytes (must be > 0).
+  * `total_pages` – total number of pages available (may be zero).
+  * `page_size` – size of each page in bytes; must be a positive integer.
 
-  Returns a `%PoisonOS.Memory{}` struct.
+  Returns a `%PoisonOS.Memory{}` struct with no pages allocated.
   """
   @spec new(non_neg_integer(), pos_integer()) :: t()
   def new(total_pages, page_size)
@@ -38,6 +41,8 @@ defmodule PoisonOS.Memory do
   Returns `{page_number, new_state}` on success, where `page_number` is
   an integer between `0` and `total_pages - 1`. If no pages are free,
   returns `{:error, state}`.
+
+  The allocation always chooses the lowest‑numbered free page.
   """
   @spec alloc(t()) :: {non_neg_integer(), t()} | {:error, t()}
   def alloc(%__MODULE__{total_pages: total, used: used} = state) do
@@ -47,6 +52,9 @@ defmodule PoisonOS.Memory do
     end
   end
 
+  @doc false
+  @spec find_free_page(non_neg_integer(), non_neg_integer(), MapSet.t(non_neg_integer())) ::
+          non_neg_integer() | nil
   defp find_free_page(current, total, used) when current < total do
     if MapSet.member?(used, current) do
       find_free_page(current + 1, total, used)
@@ -63,7 +71,8 @@ defmodule PoisonOS.Memory do
   If the page was not allocated, the state is returned unchanged.
   """
   @spec free(t(), non_neg_integer()) :: t()
-  def free(%__MODULE__{used: used} = state, page) when is_integer(page) and page >= 0 do
+  def free(%__MODULE__{used: used} = state, page)
+      when is_integer(page) and page >= 0 do
     if MapSet.member?(used, page) do
       %__MODULE__{state | used: MapSet.delete(used, page)}
     else
