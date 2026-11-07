@@ -1,6 +1,6 @@
 defmodule PoisonOS.FS do
   @moduledoc """
-  A pure in‑memory virtual filesystem.
+  Pure in‑memory virtual filesystem.
 
   The filesystem is represented as a tree of maps:
 
@@ -29,7 +29,14 @@ defmodule PoisonOS.FS do
           | :directory_not_empty
           | :is_directory
 
-  @doc "Creates an empty filesystem."
+  @doc """
+  Creates an empty filesystem.
+
+  ## Examples
+
+      iex> PoisonOS.FS.new()
+      %{type: :dir, children: %{}}
+  """
   @spec new() :: t()
   def new do
     %{type: :dir, children: %{}}
