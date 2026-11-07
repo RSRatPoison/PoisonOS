@@ -150,6 +150,8 @@ Elixir rules (these mistakes have broken earlier runs):
 - A variable whose name starts with an underscore must not be used afterwards. Use a plain name for variables you read, and an underscore name only for variables you ignore.
 - Put specific function clauses before general ones. A clause that always matches makes every later clause unreachable, which is a warning.
 - If the task is large, implement the smallest correct version that satisfies it.
+- Decide the exact return value of every public function first and write it in the @moduledoc, for example `lookup(table, name)` returns `{:ok, record}` or `:error`. The code and the tests must both match that text exactly. If the task names functions or return values, use exactly those.
+- For a unique process name in a test use `name = :"proc_#{System.unique_integer([:positive])}"`. Never interpolate a pid, reference, tuple or map into a string; convert it with inspect/1 if you must.
 - Keep the module small. Fewer features that work beat many that do not.
 
 Reply in exactly this plain-text format. No JSON, no markdown code fences, no extra commentary.
@@ -186,7 +188,9 @@ ROLE_PROMPTS = {
         "dependency order. Each must be small enough to implement as one module of under 150 lines plus "
         "tests, using only Elixir and OTP. Do not repeat any task already in the roadmap. Reply with a "
         "single file block whose path is ROADMAP.append and whose content is ONLY the new lines, one per "
-        "line, each in the form:\n- [ ] Short title (`PoisonOS.ModuleName`): what it does"
+        "line, each in the form:\n- [ ] Short title (`PoisonOS.ModuleName`): what it does. Always name the main public "
+        "functions and what each returns, for example `push(queue, item)` returns the new queue, "
+        "`pop(queue)` returns `{:ok, item, queue}` or `:empty`."
     ),
 }
 
@@ -236,20 +240,36 @@ def mark_done(task):
     Path("ROADMAP.md").write_text(text.replace(f"- [ ] {task}", f"- [x] {task}", 1))
 
 
+def api_digest(path):
+    """Moduledoc summary plus public function heads, specs and types of a module."""
+    text = read(path)
+    lines = []
+    m = re.search(r'@moduledoc\s+"""(.*?)"""', text, re.DOTALL)
+    if m:
+        lines.append("  moduledoc: " + " ".join(m.group(1).split())[:700])
+    for line in text.split("\n"):
+        if re.match(r"\s*(def|defmacro|@spec|@type|@opaque|@callback)\b", line):
+            lines.append("  " + line.strip()[:180])
+    return f"--- API of {module_name(path) or path} ({path}) ---\n" + "\n".join(lines[:60]) + "\n"
+
+
 def gather_context(focus=()):
+    """Full source for the focus files, a short API digest for every other module."""
     files = run(["git", "ls-files", "--cached", "--others", "--exclude-standard"])[1].split()
-    sources = sorted(
-        (f for f in files if f.endswith((".ex", ".exs"))),
-        key=lambda f: (f not in focus, f.startswith("test/"), f != "mix.exs", f),
-    )
+    focus = [f for f in dict.fromkeys(focus) if f in files]
     parts, used = [], 0
-    for f in sources:
+    for f in focus + (["mix.exs"] if "mix.exs" in files and "mix.exs" not in focus else []):
         block = f"--- {f} ---\n{read(f)}\n"
         if used + len(block) > MAX_CONTEXT_CHARS:
-            parts.append(f"--- {f} --- (omitted: context budget)\n")
-            continue
+            if used == 0:  # a single huge focus file: keep its beginning
+                block = block[:MAX_CONTEXT_CHARS] + "\n(truncated)\n"
+            else:
+                parts.append(f"--- {f} --- (omitted: context budget)\n")
+                continue
         parts.append(block)
         used += len(block)
+    digests = [api_digest(f) for f in files if f.startswith("lib/") and f.endswith(".ex") and f not in focus]
+    parts.append("".join(digests)[:6000])
     return "\n".join(files), "".join(parts)
 
 
@@ -352,7 +372,7 @@ def append_roadmap(content):
     if not 1 <= len(lines) <= 6:
         return "Provide between 1 and 6 new task lines."
     for l in lines:
-        if not re.fullmatch(r"- \[ \] .{15,300}", l):
+        if not re.fullmatch(r"- \[ \] .{15,500}", l):
             return f"Bad task line {l!r}. Use: - [ ] Short title (`PoisonOS.Module`): what it does"
     existing = read("ROADMAP.md")
     known = {t.strip().lower() for t in re.findall(r"^- \[[ x]\] (.+)$", existing, re.MULTILINE)}
@@ -567,15 +587,18 @@ def main():
         print(f"Attempt {attempt}")
         # Rebuild the prompt from what is on disk right now. Files written by an
         # earlier attempt stay in place, so the model can fix just one file.
-        tree, context = gather_context(job["focus"])
+        tree, context = gather_context(list(job["focus"]) + sorted(WRITTEN))
         if job.get("planner"):
             context = f"Current ROADMAP.md:\n{read('ROADMAP.md')}"
-        content = f"Task: {task}\n\nRepository files:\n{tree}\n\nCurrent source (as on disk now):\n{context}"
+        content = f"Task: {task}\n\nRepository files:\n{tree}\n\nCode (full source of the files being worked on, API summary of the rest):\n{context}"
         if error:
             content += (
                 f"\n\nYour previous attempt failed:\n{error}\n\n"
                 "Fix it. The files above are exactly what is on disk. Send only the files "
-                "you need to change, each one complete, using the same paths as before."
+                "you need to change, each one complete, using the same paths as before. If a test "
+                "fails because it expects a different return value than the code returns, decide "
+                "which side is wrong, keep the return shape documented in the @moduledoc, and change "
+                "only the side that disagrees with it. Do not change return shapes otherwise."
             )
         reply = call_model([{"role": "system", "content": system}, {"role": "user", "content": content}])
         if reply is None:
