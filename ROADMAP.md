@@ -16,5 +16,5 @@ process-based modules follow.
 - [ ] Syscall layer (`PoisonOS.Syscall`): a GenServer exposing the process table, memory and filesystem through one API
 - [ ] Application supervisor (`PoisonOS.Application`): a supervision tree starting the core services, wired in mix.exs
 - [ ] Boot sequence (`PoisonOS.Boot`): ordered startup of services with logging
-- [ ] Shell built-ins (`PoisonOS.Shell`): dispatch echo, ls, cat and mkdir against the virtual filesystem
-- [ ] Process table (`PoisonOS.ProcessTable`): an Agent-backed registry of process records (pid, name, state) with register, lookup, update_state and unregister
+- [ ] Shell built-ins (`PoisonOS.Shell`): `exec(command, args, fs)` returns `{:ok, output_string, new_fs}` or `{:error, reason_string, fs}`. Supports echo (output is the args joined by one space), mkdir (output is an empty string), ls (output is the entry names joined by newlines) and cat (output is the file content), using the public functions of `PoisonOS.FS`. An unknown command returns `{:error, "unknown command", fs}`
+- [ ] Process table (`PoisonOS.ProcessTable`): use Agent; `start_link(opts)` accepts a `:name`. `register(table, name, pid, state)` returns `:ok` or `{:error, :exists}`; `lookup(table, name)` returns `{:ok, %{pid: pid, state: state}}` or `:error`; `update_state(table, name, state)` returns `:ok` or `:error`; `unregister(table, name)` returns `:ok`; `all(table)` returns a map of name to record
