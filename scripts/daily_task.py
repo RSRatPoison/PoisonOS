@@ -25,12 +25,48 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 os.chdir(ROOT)
 
+OPENROUTER_FALLBACK_MODELS = "cohere/north-mini-code:free,google/gemma-4-31b-it:free"
+
+
+def discover_free_openrouter_models(limit=4):
+    """Ask OpenRouter which text models are free right now (the list changes often)."""
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/models", headers={"User-Agent": "daily-build"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.load(resp)["data"]
+    except Exception as e:
+        print(f"Could not list OpenRouter models: {e}")
+        return []
+
+    def is_zero(model, key):
+        try:
+            return float((model.get("pricing") or {}).get(key, "1")) == 0
+        except (TypeError, ValueError):
+            return False
+
+    skip = re.compile(r"(?:^|[-/_.])(vl|vision|image|audio|embed|guard|safeguard|moderation)(?:$|[-/_.:])", re.I)
+    found = []
+    for m in data:
+        mid = str(m.get("id", ""))
+        outputs = (m.get("architecture") or {}).get("output_modalities") or ["text"]
+        if not mid.endswith(":free") or not is_zero(m, "prompt") or not is_zero(m, "completion"):
+            continue
+        if outputs != ["text"] or skip.search(mid) or int(m.get("context_length") or 0) < 16000:
+            continue
+        found.append(m)
+
+    def score(m):
+        mid = m["id"].lower()
+        size = max([float(x) for x in re.findall(r"(\d+(?:\.\d+)?)b", mid)] or [0])
+        return (size, bool(re.search(r"code|coder", mid)), int(m.get("context_length") or 0))
+
+    found.sort(key=score, reverse=True)
+    return [m["id"] for m in found[:limit]]
+
+
 PROVIDER = (os.environ.get("PROVIDER") or "groq").strip().lower()
-OPENROUTER_DEFAULT_MODELS = (
-    "poolside/laguna-s-2.1:free,"
-    "nvidia/nemotron-3-super-120b-a12b:free,"
-    "cohere/north-mini-code:free"
-)
 PROVIDERS = {
     "groq": {
         "url": "https://api.groq.com/openai/v1/chat/completions",
@@ -39,12 +75,14 @@ PROVIDERS = {
             os.environ.get("MODEL") or "openai/gpt-oss-120b",
             os.environ.get("FALLBACK_MODEL") or "openai/gpt-oss-20b",
         ],
+        "max_tokens": 3000,
         "optional": False,
     },
     "openrouter": {
         "url": "https://openrouter.ai/api/v1/chat/completions",
         "key_env": "OPENROUTER_API_KEY",
-        "models": (os.environ.get("OPENROUTER_MODELS") or OPENROUTER_DEFAULT_MODELS).split(","),
+        "models": (os.environ.get("OPENROUTER_MODELS") or "").split(","),
+        "max_tokens": 8000,  # thinking tokens count against this limit
         "optional": True,  # a missing key skips the job instead of failing it
     },
 }
@@ -59,8 +97,11 @@ if not TOKEN:
         print(f"::warning::{_cfg['key_env']} is not set, so this job is skipped.")
         sys.exit(0)
     sys.exit(f"{_cfg['key_env']} is not set (Settings > Secrets and variables > Actions > Secrets).")
+if PROVIDER == "openrouter" and not MODELS:
+    MODELS = discover_free_openrouter_models() or OPENROUTER_FALLBACK_MODELS.split(",")
+    print(f"Free OpenRouter models to try: {MODELS}")
 MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS") or 12000)
-MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS") or 3000)
+MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS") or _cfg["max_tokens"])
 MAX_ATTEMPTS = 3
 PLANNER_MIN_OPEN = 5
 TESTER_ENOUGH = 12  # modules with at least this many tests are left alone
@@ -301,6 +342,17 @@ def append_roadmap(content):
 # ---------------------------------------------------------------- model
 
 
+def retry_delay(detail):
+    """Seconds to wait out a per-minute limit, or None when waiting will not help."""
+    low = detail.lower()
+    if re.search(r"per[- ]day|per[- ]hour|\btpd\b|\brpd\b", low):
+        return None
+    m = re.search(r"try again in (?:(\d+)m)?\s*(\d+(?:\.\d+)?)s", low)
+    if m:
+        return min(int(m.group(1) or 0) * 60 + float(m.group(2)) + 2, 90)
+    return 20
+
+
 def call_model(messages):
     for model in MODELS:
         for attempt in range(3):
@@ -312,6 +364,8 @@ def call_model(messages):
             }
             if PROVIDER == "groq" and "gpt-oss" in model:
                 payload["reasoning_effort"] = "low"
+            if PROVIDER == "openrouter":
+                payload["reasoning"] = {"effort": "low"}
             req = urllib.request.Request(
                 API_URL,
                 data=json.dumps(payload).encode(),
@@ -326,23 +380,30 @@ def call_model(messages):
                     raw = resp.read().decode(errors="replace")
                     print(f"{model}: HTTP {resp.status}, {len(raw)} bytes")
             except urllib.error.HTTPError as e:
-                detail = e.read().decode(errors="replace")[:300]
-                print(f"{model}: HTTP {e.code} {detail}")
-                if e.code == 429 and attempt < 2 and "day" not in detail.lower():
-                    print("Rate limited; waiting 65 seconds before retrying.")
-                    time.sleep(65)
-                    continue
+                detail = e.read().decode(errors="replace")[:600]
+                print(f"{model}: HTTP {e.code} {detail[:300]}")
+                if e.code == 429 and attempt < 2:
+                    delay = retry_delay(detail)
+                    if delay is not None:
+                        print(f"Rate limited; waiting {delay:.0f} seconds before retrying.")
+                        time.sleep(delay)
+                        continue
                 break
             except Exception as e:
                 print(f"{model}: {e}")
                 break
+            data, content, finish = None, None, None
             try:
-                content = json.loads(raw)["choices"][0]["message"]["content"]
-            except (ValueError, KeyError, IndexError, TypeError):
-                content = None
+                data = json.loads(raw)
+                choice = data["choices"][0]
+                content = choice["message"].get("content")
+                finish = choice.get("finish_reason")
+            except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+                pass
             if isinstance(content, str) and content.strip():
                 return content
-            print(f"{model}: unexpected or empty body: {raw[:300]!r}")
+            usage = data.get("usage") if isinstance(data, dict) else None
+            print(f"{model}: no usable content (finish_reason={finish}, usage={usage}); body starts {raw.strip()[:200]!r}")
             break
     return None
 
