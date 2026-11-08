@@ -18,7 +18,7 @@ process-based modules follow.
 - [x] Device driver manager (`PoisonOS.DeviceDriver`): load drivers with `load(driver_module)` returning `:ok` or `{:error, reason}`; list loaded drivers with `list()` returning `[module]`.
 - [x] Network stack (`PoisonOS.Network`): send packets with `send(iface, packet)` returning `:ok`; receive packets with `receive(iface)` returning `{:ok, packet}` or `:empty`.
 - [x] Logger (`PoisonOS.Logger`): log messages with `log(level, message)` returning `:ok`; retrieve recent logs with `recent(level, count)` returning `[message]`.
-- [ ] User manager (`PoisonOS.UserManager`): create users with `create(username, password)` returning `{:ok, user_id}`; authenticate with `auth(username, password)` returning `{:ok, user_id}` or `:error`.
+- [x] User manager (`PoisonOS.UserManager`): create users with `create(username, password)` returning `{:ok, user_id}`; authenticate with `auth(username, password)` returning `{:ok, user_id}` or `:error`.
 - [ ] Scheduler enhancements (`PoisonOS.Scheduler.Priority`): priority queue scheduler with `new()`; `enqueue(sched, pid, priority)`; `next(sched)` returns `{:ok, pid}` or `:empty`.
 - [ ] Boot sequence (`PoisonOS.Boot`): ordered startup of services with logging
 - [ ] Shell built-ins (`PoisonOS.Shell`): `exec(command, args, fs)` returns `{:ok, output_string, new_fs}` or `{:error, reason_string, fs}`. Supports echo (output is the args joined by one space), mkdir (output is an empty string), ls (output is the entry names joined by newlines) and cat (output is the file content), using the public functions of `PoisonOS.FS`. An unknown command returns `{:error, "unknown command", fs}`
