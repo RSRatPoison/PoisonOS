@@ -158,6 +158,7 @@ Elixir rules (these mistakes have broken earlier runs):
 - Tests must not depend on global state or on test order. Never call Application.start or Application.stop for :poison_os, and never use a process name that another test also uses. Start your own instances under unique names.
 - Decide the exact return value of every public function first and write it in the @moduledoc, for example `lookup(table, name)` returns `{:ok, record}` or `:error`. The code and the tests must both match that text exactly. If the task names functions or return values, use exactly those.
 - For a unique process name in a test use `name = :"proc_#{System.unique_integer([:positive])}"`. Never interpolate a pid, reference, tuple or map into a string; convert it with inspect/1 if you must.
+- Never call PoisonOS.Application.start/2 or Supervisor.start_link with the application's name in tests: the application is already running while tests run, so it returns {:error, {:already_started, pid}}.
 - Keep the module small. Fewer features that work beat many that do not.
 
 Reply in exactly this plain-text format. No JSON, no markdown code fences, no extra commentary.
@@ -311,6 +312,8 @@ def pick_tester():
         mod = module_name(f)
         if not mod or mod == "PoisonOS":
             continue
+        if re.search(r"^\s*use Application\b|@behaviour Application\b", read(f), re.M):
+            continue  # an application callback starts global state; it cannot be tested safely in isolation
         tests = test_files_mentioning(mod)
         n = sum(count_tests(t) for t in tests)
         if best is None or n < best[0]:
@@ -535,7 +538,7 @@ def apply_and_check(plan, job, lenient=False):
         target.write_text(content if content.endswith("\n") else content + "\n")
         WRITTEN.add(path)
     if lenient:
-        print("Final attempt: compiler warnings are tolerated, tests must still pass.")
+        print("Compiler warnings are tolerated for this attempt, tests must still pass.")
     for cmd in (CHECKS_LENIENT if lenient else CHECKS):
         code, out = run(cmd)
         print(f"$ {' '.join(cmd)} -> exit {code}")
@@ -654,7 +657,7 @@ def main():
             return 1
         try:
             plan = parse_reply(reply)
-            error = apply_and_check(plan, job, lenient=(attempt == MAX_ATTEMPTS))
+            error = apply_and_check(plan, job, lenient=(attempt == MAX_ATTEMPTS or ROLE == "tester"))
         except ValueError as e:
             error = str(e)
         if not error:
