@@ -76,6 +76,7 @@ PROVIDERS = {
             os.environ.get("FALLBACK_MODEL") or "openai/gpt-oss-20b",
         ],
         "max_tokens": 3000,
+        "context_chars": 5000,
         "optional": False,
     },
     "openrouter": {
@@ -83,6 +84,7 @@ PROVIDERS = {
         "key_env": "OPENROUTER_API_KEY",
         "models": (os.environ.get("OPENROUTER_MODELS") or "").split(","),
         "max_tokens": 8000,  # thinking tokens count against this limit
+        "context_chars": 16000,
         "optional": True,  # a missing key skips the job instead of failing it
     },
 }
@@ -100,7 +102,7 @@ if not TOKEN:
 if PROVIDER == "openrouter" and not MODELS:
     MODELS = discover_free_openrouter_models() or OPENROUTER_FALLBACK_MODELS.split(",")
     print(f"Free OpenRouter models to try: {MODELS}")
-MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS") or 12000)
+MAX_CONTEXT_CHARS = int(os.environ.get("MAX_CONTEXT_CHARS") or _cfg["context_chars"])
 MAX_OUTPUT_TOKENS = int(os.environ.get("MAX_OUTPUT_TOKENS") or _cfg["max_tokens"])
 MAX_ATTEMPTS = 3
 PLANNER_MIN_OPEN = 5
@@ -117,6 +119,7 @@ BANNED = re.compile(
 CHECKS = [
     ["mix", "format", "--migrate"],
     ["mix", "compile", "--warnings-as-errors"],
+    ["mix", "test", "--seed", "0"],
     ["mix", "test"],
 ]
 # Used on the final attempt only: code that compiles and passes its tests is kept
@@ -124,6 +127,7 @@ CHECKS = [
 CHECKS_LENIENT = [
     ["mix", "format", "--migrate"],
     ["mix", "compile"],
+    ["mix", "test", "--seed", "0"],
     ["mix", "test"],
 ]
 WRITTEN = set()  # files written during this run (they may be rewritten on retry)
@@ -150,6 +154,8 @@ Elixir rules (these mistakes have broken earlier runs):
 - A variable whose name starts with an underscore must not be used afterwards. Use a plain name for variables you read, and an underscore name only for variables you ignore.
 - Put specific function clauses before general ones. A clause that always matches makes every later clause unreachable, which is a warning.
 - If the task is large, implement the smallest correct version that satisfies it.
+- Existing modules and tests are not yours to change. Use their public API exactly as shown in the API summaries, and adapt your new code to it.
+- Tests must not depend on global state or on test order. Never call Application.start or Application.stop for :poison_os, and never use a process name that another test also uses. Start your own instances under unique names.
 - Decide the exact return value of every public function first and write it in the @moduledoc, for example `lookup(table, name)` returns `{:ok, record}` or `:error`. The code and the tests must both match that text exactly. If the task names functions or return values, use exactly those.
 - For a unique process name in a test use `name = :"proc_#{System.unique_integer([:positive])}"`. Never interpolate a pid, reference, tuple or map into a string; convert it with inspect/1 if you must.
 - Keep the module small. Fewer features that work beat many that do not.
@@ -182,6 +188,13 @@ ROLE_PROMPTS = {
         "@doc and @spec, fix any compiler warnings in it, clarify private function names and comments, remove duplication. Public function "
         "names, arities and behaviour must not change, and the existing tests must still pass. Send only "
         "that one file, complete."
+    ),
+    "repair": (
+        "Your role: REPAIR. The test suite on the main branch is failing, which blocks all other work. Make "
+        "`mix test` pass. Usually the test is wrong: it depends on global state, test order, or a return "
+        "value the code does not produce. Fix the test in that case, and fix the code only when the code is "
+        "wrong. You may rewrite a test file so that it contains only tests that pass and do not depend on "
+        "global state. You may change existing files under lib/ and test/."
     ),
     "planner": (
         "Your role: PLANNER. Propose 4 to 6 NEW roadmap tasks that continue the project in a sensible "
@@ -269,7 +282,7 @@ def gather_context(focus=()):
         parts.append(block)
         used += len(block)
     digests = [api_digest(f) for f in files if f.startswith("lib/") and f.endswith(".ex") and f not in focus]
-    parts.append("".join(digests)[:6000])
+    parts.append("".join(digests)[: max(MAX_CONTEXT_CHARS // 3, 1500)])
     return "\n".join(files), "".join(parts)
 
 
@@ -285,7 +298,7 @@ def pick_builder():
         "task": task,
         "focus": [],
         "allowed": lambda p: p in {"README.md", "mix.exs", ".formatter.exs"}
-        or p.startswith(("lib/", "test/", "config/", "docs/")),
+        or (p.startswith(("lib/", "test/", "config/", "docs/")) and (p in WRITTEN or not (ROOT / p).exists())),
         "fallback": "Implement " + re.split(r"[:(]", task)[0].strip()[:60],
         "after": lambda: mark_done(task),
         "defer": True,
@@ -339,7 +352,7 @@ def pick_reviewer():
     mod = module_name(f)
     return {
         "task": f"Improve documentation and typespecs of module {mod} ({f}) without changing its behaviour.",
-        "focus": [f] + test_files_mentioning(mod),
+        "focus": [f],
         "allowed": lambda p: p == f,
         "fallback": f"Improve docs and specs in {mod}",
         "after": None,
@@ -391,6 +404,9 @@ def retry_delay(detail):
     low = detail.lower()
     if re.search(r"per[- ]day|per[- ]hour|\btpd\b|\brpd\b", low):
         return None
+    sizes = re.search(r"limit (\d+), used (\d+), requested (\d+)", low)
+    if sizes and int(sizes.group(3)) > int(sizes.group(1)):
+        return None  # the request alone is over the limit
     m = re.search(r"try again in (?:(\d+)m)?\s*(\d+(?:\.\d+)?)s", low)
     if m:
         return min(int(m.group(1) or 0) * 60 + float(m.group(2)) + 2, 90)
@@ -556,6 +572,31 @@ def defer_task(task):
     return code == 0
 
 
+def baseline_failure():
+    """Output of the test suite on the untouched checkout if it fails twice in a row, else None."""
+    out = ""
+    for _ in range(2):
+        code, out = run(["mix", "test"])
+        if code == 0:
+            return None
+    return out
+
+
+def pick_repair(output):
+    mentioned = []
+    for f in re.findall(r"((?:lib|test)/[\w./]+\.exs?)", output):
+        if f not in mentioned and (ROOT / f).exists():
+            mentioned.append(f)
+    return {
+        "task": "The test suite on the main branch is failing. Make `mix test` pass.\n\nFailure output:\n" + shorten(output, 2200),
+        "focus": mentioned[:4],
+        "allowed": lambda p: p.startswith(("lib/", "test/")),
+        "fallback": "Fix failing tests",
+        "after": None,
+        "repair": True,
+    }
+
+
 def commit_message(model_msg, fallback, first_attempt):
     lines = (model_msg or "").strip().splitlines()
     msg = lines[0][:72] if lines else ""
@@ -578,10 +619,16 @@ def main():
     if not job:
         print(f"Role '{ROLE}': nothing to do right now.")
         return 0
+    if not job.get("planner"):
+        broken = baseline_failure()
+        if broken is not None:
+            print("::warning::The tests on main fail before any change. Switching this run to repair mode.")
+            job = pick_repair(broken)
+    label = "repair" if job.get("repair") else ROLE
     task = job["task"]
-    print(f"Role: {ROLE}\nTask: {task}")
+    print(f"Role: {label}\nTask: {task}")
 
-    system = COMMON_PROMPT + "\n\n" + ROLE_PROMPTS[ROLE]
+    system = COMMON_PROMPT + "\n\n" + ROLE_PROMPTS[label]
     plan, error, attempt = None, None, 0
     for attempt in range(1, MAX_ATTEMPTS + 1):
         print(f"Attempt {attempt}")
@@ -618,7 +665,7 @@ def main():
         note = ""
         if job.get("defer") and defer_task(task):
             note = " The task was moved to the end of the roadmap so the next run tries a different one."
-        print(f"::warning::Role '{ROLE}' failed its checks after {MAX_ATTEMPTS} attempts.{note}")
+        print(f"::warning::Role '{label}' failed its checks after {MAX_ATTEMPTS} attempts.{note}")
         return 0
 
     if job["after"]:
