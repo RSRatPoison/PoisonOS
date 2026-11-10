@@ -21,7 +21,7 @@ process-based modules follow.
 - [x] User manager (`PoisonOS.UserManager`): create users with `create(username, password)` returning `{:ok, user_id}`; authenticate with `auth(username, password)` returning `{:ok, user_id}` or `:error`.
 - [x] Process table (`PoisonOS.ProcessTable`): use Agent; `start_link(opts)` accepts a `:name`. `register(table, name, pid, state)` returns `:ok` or `{:error, :exists}`; `lookup(table, name)` returns `{:ok, %{pid: pid, state: state}}` or `:error`; `update_state(table, name, state)` returns `:ok` or `:error`; `unregister(table, name)` returns `:ok`; `all(table)` returns a map of name to record
 - [x] Scheduler enhancements (`PoisonOS.Scheduler.Priority`): priority queue scheduler with `new()`; `enqueue(sched, pid, priority)`; `next(sched)` returns `{:ok, pid}` or `:empty`.
-- [ ] Simple shell scripting (`PoisonOS.Shell.Script`): `run(script, fs)` parses lines separated by "\n", executes built-in commands via `PoisonOS.Shell`, returns {:ok, final_fs} or {:error, reason, fs}.
+- [x] Simple shell scripting (`PoisonOS.Shell.Script`): `run(script, fs)` parses lines separated by "\n", executes built-in commands via `PoisonOS.Shell`, returns {:ok, final_fs} or {:error, reason, fs}.
 - [ ] File permissions (`PoisonOS.FS.Permissions`): add permission structs to FS entries; `chmod(fs, path, mode)` returns {:ok, new_fs} or :error; `stat(fs, path)` returns {:ok, %{mode: mode, size: size}}.
 - [ ] IPC channels (`PoisonOS.IPC.Channel`): create named channels with `new(name)`; `send(chan, msg)` returns :ok; `receive(chan)` returns {:ok, msg} or :empty; `close(chan)` returns :ok.
 - [ ] Device driver hot reload (`PoisonOS.DeviceDriver.HotReload`): `reload(driver_module)` unloads and loads a driver, returning :ok or {:error, reason}.
