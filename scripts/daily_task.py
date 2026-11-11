@@ -154,11 +154,12 @@ Elixir rules (these mistakes have broken earlier runs):
 - A variable whose name starts with an underscore must not be used afterwards. Use a plain name for variables you read, and an underscore name only for variables you ignore.
 - Put specific function clauses before general ones. A clause that always matches makes every later clause unreachable, which is a warning.
 - If the task is large, implement the smallest correct version that satisfies it.
-- Existing modules and tests are not yours to change. Use their public API exactly as shown in the API summaries, and adapt your new code to it.
+- Existing modules and tests are not yours to change, except the one existing file the task itself names for extension (given to you in full). Use their public API exactly as shown in the API summaries, and adapt your new code to it.
 - Tests must not depend on global state or on test order. Never call Application.start or Application.stop for :poison_os, and never use a process name that another test also uses. Start your own instances under unique names.
 - Decide the exact return value of every public function first and write it in the @moduledoc, for example `lookup(table, name)` returns `{:ok, record}` or `:error`. The code and the tests must both match that text exactly. If the task names functions or return values, use exactly those.
 - For a unique process name in a test use `name = :"proc_#{System.unique_integer([:positive])}"`. Never interpolate a pid, reference, tuple or map into a string; convert it with inspect/1 if you must.
 - Never call PoisonOS.Application.start/2 or Supervisor.start_link with the application's name in tests: the application is already running while tests run, so it returns {:error, {:already_started, pid}}.
+- Never put #{...} interpolation inside @moduledoc or @doc text (it is evaluated at compile time). Write examples without interpolation.
 - Keep the module small. Fewer features that work beat many that do not.
 
 Reply in exactly this plain-text format. No JSON, no markdown code fences, no extra commentary.
@@ -185,7 +186,7 @@ ROLE_PROMPTS = {
         "behaviour the code does not clearly implement. Write 4 to 8 focused tests."
     ),
     "reviewer": (
-        "Your role: REVIEWER. Improve ONE existing module file named in the task: add or improve @moduledoc, "
+        "Your role: REVIEWER. Improve ONE existing module file named in the task WITHOUT changing any behaviour. Keep every function name, argument and return value exactly as it is, and do not add or remove functions. Add or improve @moduledoc, "
         "@doc and @spec, fix any compiler warnings in it, clarify private function names and comments, remove duplication. Public function "
         "names, arities and behaviour must not change, and the existing tests must still pass. Send only "
         "that one file, complete."
@@ -295,10 +296,18 @@ def pick_builder():
     if not tasks:
         return None
     task = tasks[0].strip()
+    # A task that names an existing module (in backticks) is allowed to extend that one file.
+    extend = None
+    m = re.search(r"`(PoisonOS(?:\.\w+)*)`", task)
+    if m:
+        for f in lib_files():
+            if module_name(f) == m.group(1):
+                extend = f
     return {
         "task": task,
-        "focus": [],
+        "focus": [extend] if extend else [],
         "allowed": lambda p: p in {"README.md", "mix.exs", ".formatter.exs"}
+        or p == extend
         or (p.startswith(("lib/", "test/", "config/", "docs/")) and (p in WRITTEN or not (ROOT / p).exists())),
         "fallback": "Implement " + re.split(r"[:(]", task)[0].strip()[:60],
         "after": lambda: mark_done(task),
@@ -346,6 +355,11 @@ def files_with_warnings():
     return seen
 
 
+def public_defs(text):
+    """Names of the public functions defined in a source file."""
+    return set(re.findall(r"^\s*def\s+(\w+[?!]?)", text, re.M))
+
+
 def pick_reviewer():
     files = [f for f in lib_files() if module_name(f) not in (None, "PoisonOS")]
     if not files:
@@ -357,6 +371,7 @@ def pick_reviewer():
         "task": f"Improve documentation and typespecs of module {mod} ({f}) without changing its behaviour.",
         "focus": [f],
         "allowed": lambda p: p == f,
+        "keep_api": (f, public_defs(read(f))),
         "fallback": f"Improve docs and specs in {mod}",
         "after": None,
     }
@@ -533,6 +548,12 @@ def apply_and_check(plan, job, lenient=False):
             return f"{path} contains the forbidden word {hit.group(0)!r}. Remove it."
         if job.get("planner"):
             return append_roadmap(content)
+        if job.get("keep_api") and path == job["keep_api"][0]:
+            missing = sorted(job["keep_api"][1] - public_defs(content))
+            if missing:
+                return (f"{path} no longer defines these public functions: {', '.join(missing)}. "
+                        "Do not rename or remove any function and do not change behaviour. "
+                        "Start from the file as given and only add or improve docs, specs and comments.")
         target = ROOT / path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content if content.endswith("\n") else content + "\n")
@@ -662,7 +683,8 @@ def main():
             error = str(e)
         if not error:
             break
-        print(error)
+        # Indented so GitHub's output matchers do not turn every failed attempt into a red annotation.
+        print("\n".join("  | " + line for line in error.splitlines()))
     else:
         reset_worktree()
         note = ""
