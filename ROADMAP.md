@@ -23,7 +23,7 @@ process-based modules follow.
 - [x] Scheduler enhancements (`PoisonOS.Scheduler.Priority`): priority queue scheduler with `new()`; `enqueue(sched, pid, priority)`; `next(sched)` returns `{:ok, pid}` or `:empty`.
 - [x] Simple shell scripting (`PoisonOS.Shell.Script`): `run(script, fs)` parses lines separated by "\n", executes built-in commands via `PoisonOS.Shell`, returns {:ok, final_fs} or {:error, reason, fs}.
 - [x] Device driver hot reload (`PoisonOS.DeviceDriver.HotReload`): `reload(driver_module)` unloads and loads a driver, returning :ok or {:error, reason}.
-- [ ] File permissions (`PoisonOS.FS.Permissions`): add permission structs to FS entries; `chmod(fs, path, mode)` returns {:ok, new_fs} or :error; `stat(fs, path)` returns {:ok, %{mode: mode, size: size}}.
+- [x] File permissions (`PoisonOS.FS.Permissions`): add permission structs to FS entries; `chmod(fs, path, mode)` returns {:ok, new_fs} or :error; `stat(fs, path)` returns {:ok, %{mode: mode, size: size}}.
 - [ ] IPC channels (`PoisonOS.IPC.Channel`): create named channels with `new(name)`; `send(chan, msg)` returns :ok; `receive(chan)` returns {:ok, msg} or :empty; `close(chan)` returns :ok.
 - [ ] Boot sequence (`PoisonOS.Boot`): ordered startup of services with logging
 - [ ] Shell built-ins (`PoisonOS.Shell`): `exec(command, args, fs)` returns `{:ok, output_string, new_fs}` or `{:error, reason_string, fs}`. Supports echo (output is the args joined by one space), mkdir (output is an empty string), ls (output is the entry names joined by newlines) and cat (output is the file content), using the public functions of `PoisonOS.FS`. An unknown command returns `{:error, "unknown command", fs}`
