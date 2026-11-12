@@ -1,17 +1,24 @@
 defmodule PoisonOS.IPC.Channel do
   @moduledoc """
-  Named IPC channels for message passing.
+  A simple named IPC (inter‑process communication) channel manager.
 
-  The channel manager is a `GenServer` that holds a map of channel names to
-  message queues. Each channel is a FIFO queue of messages.
+  The manager runs as a `GenServer` that stores a map where each key is a
+  channel name and each value is a FIFO queue (list) of messages.
 
   ## Public API
 
-  * `start_link(opts \\ [])` – starts the channel manager. Accepts `:name` option.
-  * `new(name, opts \\ [])` – creates a new named channel. Returns `:ok` or `{:error, :already_exists}`.
-  * `send(channel_name, message, opts \\ [])` – sends a message to a channel. Returns `:ok` or `{:error, :not_found}`.
-  * `receive(channel_name, opts \\ [])` – receives a message from a channel. Returns `{:ok, message}`, `:empty`, or `{:error, :not_found}`.
-  * `close(channel_name, opts \\ [])` – closes a channel. Returns `:ok` or `{:error, :not_found}`.
+  * `start_link/1` – starts the manager process. Accepts an optional `:name`
+    option to register the process under a custom name.
+  * `new/2` – creates a new empty channel. Returns `:ok` or
+    `{:error, :already_exists}` if the name is taken.
+  * `send/3` – appends a message to the end of a channel's queue. Returns
+    `:ok`. If the channel does not exist the message is silently dropped.
+  * `receive/2` – removes the oldest message from a channel. Returns
+    `{:ok, message}` when a message is available, `:empty` when the channel
+    exists but has no messages, or `{:error, :not_found}` when the channel
+    does not exist.
+  * `close/2` – removes a channel from the manager. Returns `:ok` or
+    `{:error, :not_found}`.
   """
 
   use GenServer
@@ -26,7 +33,11 @@ defmodule PoisonOS.IPC.Channel do
 
   ## Options
 
-  * `:name` – the name to register the process under (atom or `{:global, term}`).
+    * `:name` – the name to register the process under (an atom or
+      `{:global, term}`). Defaults to the module name.
+
+  Returns `{:ok, pid}` on success or `{:error, {:already_started, pid}}` if a
+  process with the given name is already running.
   """
   @spec start_link(opts()) :: {:ok, pid()} | {:error, {:already_started, pid()}}
   def start_link(opts \\ []) do
@@ -37,8 +48,8 @@ defmodule PoisonOS.IPC.Channel do
   @doc """
   Creates a new named channel.
 
-  Returns `:ok` on success, or `{:error, :already_exists}` if a channel with
-  the given name already exists.
+  Returns `:ok` on success or `{:error, :already_exists}` if a channel with the
+  given name already exists.
   """
   @spec new(name(), opts()) :: :ok | {:error, :already_exists}
   def new(channel_name, opts \\ []) do
@@ -49,9 +60,9 @@ defmodule PoisonOS.IPC.Channel do
   @doc """
   Sends a message to a channel.
 
-  Returns `:ok` on success, or `{:error, :not_found}` if the channel does not exist.
+  Returns `:ok`. If the channel does not exist the message is ignored.
   """
-  @spec send(name(), message(), opts()) :: :ok | {:error, :not_found}
+  @spec send(name(), message(), opts()) :: :ok
   def send(channel_name, message, opts \\ []) do
     server = Keyword.get(opts, :name, __MODULE__)
     GenServer.cast(server, {:send, channel_name, message})
@@ -61,19 +72,24 @@ defmodule PoisonOS.IPC.Channel do
   @doc """
   Receives a message from a channel.
 
-  Returns `{:ok, message}` if a message is available, `:empty` if the channel
-  exists but has no messages, or `{:error, :not_found}` if the channel does not exist.
+  Returns:
+
+    * `{:ok, message}` – when a message is available,
+    * `:empty` – when the channel exists but has no messages,
+    * `{:error, :not_found}` – when the channel does not exist.
   """
-  @spec receive(name(), opts()) :: {:ok, message()} | :empty | {:error, :not_found}
+  @spec receive(name(), opts()) ::
+          {:ok, message()} | :empty | {:error, :not_found}
   def receive(channel_name, opts \\ []) do
     server = Keyword.get(opts, :name, __MODULE__)
     GenServer.call(server, {:receive, channel_name})
   end
 
   @doc """
-  Closes a channel.
+  Closes a channel, removing it from the manager.
 
-  Returns `:ok` on success, or `{:error, :not_found}` if the channel does not exist.
+  Returns `:ok` on success or `{:error, :not_found}` if the channel does not
+  exist.
   """
   @spec close(name(), opts()) :: :ok | {:error, :not_found}
   def close(channel_name, opts \\ []) do
@@ -84,11 +100,16 @@ defmodule PoisonOS.IPC.Channel do
   # GenServer callbacks
 
   @impl true
+  @doc false
+  @spec init(term()) :: {:ok, state()}
   def init(_) do
     {:ok, %{}}
   end
 
   @impl true
+  @doc false
+  @spec handle_call({:new, name()}, {pid(), term()}, state()) ::
+          {:reply, :ok | {:error, :already_exists}, state()}
   def handle_call({:new, channel_name}, _from, state) do
     if Map.has_key?(state, channel_name) do
       {:reply, {:error, :already_exists}, state}
@@ -98,6 +119,9 @@ defmodule PoisonOS.IPC.Channel do
   end
 
   @impl true
+  @doc false
+  @spec handle_call({:receive, name()}, {pid(), term()}, state()) ::
+          {:reply, {:ok, message()} | :empty | {:error, :not_found}, state()}
   def handle_call({:receive, channel_name}, _from, state) do
     case Map.fetch(state, channel_name) do
       {:ok, []} ->
@@ -112,6 +136,9 @@ defmodule PoisonOS.IPC.Channel do
   end
 
   @impl true
+  @doc false
+  @spec handle_call({:close, name()}, {pid(), term()}, state()) ::
+          {:reply, :ok | {:error, :not_found}, state()}
   def handle_call({:close, channel_name}, _from, state) do
     if Map.has_key?(state, channel_name) do
       {:reply, :ok, Map.delete(state, channel_name)}
@@ -121,6 +148,8 @@ defmodule PoisonOS.IPC.Channel do
   end
 
   @impl true
+  @doc false
+  @spec handle_cast({:send, name(), message()}, state()) :: {:noreply, state()}
   def handle_cast({:send, channel_name, message}, state) do
     if Map.has_key?(state, channel_name) do
       new_queue = state[channel_name] ++ [message]
