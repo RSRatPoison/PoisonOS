@@ -20,9 +20,21 @@ defmodule PoisonOS.Shell.Script do
       failure `reason` and the filesystem state at the point of failure.
   """
 
+  @typedoc "A shell script expressed as a string."
   @type script :: String.t()
+
+  @typedoc "The abstract representation of a filesystem used by the shell."
   @type filesystem :: any()
+
+  @typedoc "Reason for a command failure, as returned by `PoisonOS.Shell.run/2`."
   @type reason :: term()
+
+  @typedoc """
+  Result of executing a script.
+
+  * `{:ok, filesystem}` – all commands succeeded.
+  * `{:error, reason, filesystem}` – execution stopped on the first failure.
+  """
   @type result :: {:ok, filesystem()} | {:error, reason(), filesystem()}
 
   @doc """
