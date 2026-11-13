@@ -25,7 +25,7 @@ process-based modules follow.
 - [x] Device driver hot reload (`PoisonOS.DeviceDriver.HotReload`): `reload(driver_module)` unloads and loads a driver, returning :ok or {:error, reason}.
 - [x] File permissions (`PoisonOS.FS.Permissions`): add permission structs to FS entries; `chmod(fs, path, mode)` returns {:ok, new_fs} or :error; `stat(fs, path)` returns {:ok, %{mode: mode, size: size}}.
 - [x] IPC channels (`PoisonOS.IPC.Channel`): create named channels with `new(name)`; `send(chan, msg)` returns :ok; `receive(chan)` returns {:ok, msg} or :empty; `close(chan)` returns :ok.
-- [ ] Boot sequence (`PoisonOS.Boot`): ordered startup of services with logging
+- [x] Boot sequence (`PoisonOS.Boot`): ordered startup of services with logging
 - [ ] Shell built-ins (`PoisonOS.Shell`): `exec(command, args, fs)` returns `{:ok, output_string, new_fs}` or `{:error, reason_string, fs}`. Supports echo (output is the args joined by one space), mkdir (output is an empty string), ls (output is the entry names joined by newlines) and cat (output is the file content), using the public functions of `PoisonOS.FS`. An unknown command returns `{:error, "unknown command", fs}`
 - [ ] Process monitoring (`PoisonOS.ProcessMonitor`): start_link(opts) launches a GenServer that tracks process exits; `watch(monitor, pid)` returns :ok; `unwatch(monitor, pid)` returns :ok; `list(monitor)` returns [{pid, reason}] of terminated processes.
 - [ ] Signal handling (`PoisonOS.Signal`): register signal handlers with `register(pid, signal, fun)` returning `:ok`; send signals with `send(pid, signal)` returning `:ok` or `{:error, :noproc}`; list handlers with `list(pid)` returning `[{signal, fun}]`.
