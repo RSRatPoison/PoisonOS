@@ -26,7 +26,7 @@ process-based modules follow.
 - [x] File permissions (`PoisonOS.FS.Permissions`): add permission structs to FS entries; `chmod(fs, path, mode)` returns {:ok, new_fs} or :error; `stat(fs, path)` returns {:ok, %{mode: mode, size: size}}.
 - [x] IPC channels (`PoisonOS.IPC.Channel`): create named channels with `new(name)`; `send(chan, msg)` returns :ok; `receive(chan)` returns {:ok, msg} or :empty; `close(chan)` returns :ok.
 - [x] Boot sequence (`PoisonOS.Boot`): ordered startup of services with logging
-- [ ] Virtual console (`PoisonOS.Console`): write text to a virtual console buffer with `write(console, string)` returning updated console; read the buffer with `read(console, count)` returning `{string, new_console}`.
+- [x] Virtual console (`PoisonOS.Console`): write text to a virtual console buffer with `write(console, string)` returning updated console; read the buffer with `read(console, count)` returning `{string, new_console}`.
 - [ ] Environment variables (`PoisonOS.Env`): manage per-process environment with `set(env, key, value)` returning updated env; `get(env, key)` returns `{:ok, value}` or `:error`; `delete(env, key)` returns updated env.
 - [ ] Simple package manager (`PoisonOS.Pkg`): install packages with `install(pkg_name, version)` returning `:ok` or `{:error, reason}`; list installed packages with `list()` returning `[{pkg_name, version}]`.
 - [ ] Time service (`PoisonOS.Time`): get current time with `now()` returning `%DateTime{}`; schedule a one-shot timer with `after(ms, fun)` returning a reference; cancel timer with `cancel(ref)` returning `:ok` or `{:error, :not_found}`.
