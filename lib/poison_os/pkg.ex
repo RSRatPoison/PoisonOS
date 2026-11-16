@@ -1,16 +1,16 @@
 defmodule PoisonOS.Pkg do
   @moduledoc """
-  Simple package manager. Installed packages are stored in an in-memory registry
-  backed by an `Agent`. The registry maps package names to their versions.
+  Simple in‑memory package manager.
 
-  ## Public API
+  Packages are stored in an `Agent` process that holds a map where the key is the
+  package name (`String.t/0`) and the value is the version (`String.t/0`). The
+  manager provides functions to start the registry, install a package and list
+  all installed packages.
 
-  * `start_link(opts \\ [])` – starts the manager. Accepts `:name` option.
-  * `install(pkg_name, version, opts \\ [])` – installs a package with the given version.
-    Returns `:ok` or `{:error, reason}`.
-  * `list(opts \\ [])` – returns a list of `{pkg_name, version}` tuples for all installed packages.
-    The `opts` argument is used to specify the process name, e.g. `install("foo", "1.0", name: :my_pkg)`.
-    If no name is given the default `PoisonOS.Pkg` name is used.
+  The process can be started under a custom name using the `:name` option.
+  All public functions accept the same `opts` keyword list so that callers can
+  specify the process name they want to operate on. When no name is supplied,
+  `PoisonOS.Pkg` (the module name) is used as the default.
   """
 
   use Agent
@@ -25,8 +25,11 @@ defmodule PoisonOS.Pkg do
 
   ## Options
 
-  * `:name` – the name to register the process under (atom or `{:global, term}`).
-    Defaults to `PoisonOS.Pkg`.
+    * `:name` – the name to register the process under (an atom or
+      `{:global, term}`). Defaults to `PoisonOS.Pkg`.
+
+  Returns `{:ok, pid}` on success or `{:error, {:already_started, pid}}` if a
+  process with the given name is already running.
   """
   @spec start_link(opts()) :: {:ok, pid()} | {:error, {:already_started, pid()}}
   def start_link(opts \\ []) do
@@ -37,9 +40,12 @@ defmodule PoisonOS.Pkg do
   @doc """
   Installs a package with the given version.
 
-  Returns `:ok` on success, or `{:error, :already_installed}` if the package
-  is already installed, or `{:error, :invalid_name}` / `{:error, :invalid_version}`
-  if the arguments are not valid strings.
+  The function validates that both `pkg_name` and `version` are binaries.
+  If the package is already present the call fails with `{:error, :already_installed}`.
+  If either argument is not a binary the call fails with `{:error, :invalid_name}`.
+  (The `:invalid_version` reason is reserved for future validation.)
+
+  Returns `:ok` on success.
   """
   @spec install(pkg_name(), version(), opts()) :: :ok | {:error, reason()}
   def install(pkg_name, version, opts \\ [])
@@ -57,14 +63,17 @@ defmodule PoisonOS.Pkg do
     |> case do
       :ok -> :ok
       {:error, reason} -> {:error, reason}
-      {:error, reason} -> {:error, reason}
     end
   end
 
   def install(_pkg_name, _version, _opts), do: {:error, :invalid_name}
 
   @doc """
-  Lists all installed packages as a list of `{pkg_name, version}` tuples.
+  Returns a list of all installed packages.
+
+  The result is a list of `{pkg_name, version}` tuples sorted by the internal
+  map order (which is undefined). The `opts` keyword list can be used to
+  specify the process name, mirroring the other functions.
   """
   @spec list(opts()) :: [{pkg_name(), version()}]
   def list(opts \\ []) do
