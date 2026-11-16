@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/poisonos-logo-small.png" width="240" alt="PoisonOS"></p>
+
 # PoisonOS
 
 An operating-system layer written entirely in Elixir.
