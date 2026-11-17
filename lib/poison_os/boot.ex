@@ -18,6 +18,25 @@ defmodule PoisonOS.Boot do
   @type service :: {module(), term()}
   @type result :: {:ok, pid()} | {:error, term()}
 
+  @doc """
+  Starts a list of services in the order given.
+
+  Each element of `services` must be a tuple `{module, args}` where:
+
+  * `module` is a module that implements `start_link/1` (or `start_link/0`
+    when `args` is an empty list).
+  * `args` is either a list of arguments to be passed to `start_link/1`
+    or a single argument that will be wrapped in a list.
+
+  The function returns a list of results, one for each service, in the
+  same order as the input. Each result is either `{:ok, pid}` when the
+  service started successfully or `{:error, reason}` otherwise.
+
+  ## Examples
+
+      iex> PoisonOS.Boot.boot([{MyService, []}, {OtherService, [arg1, arg2]}])
+      [{:ok, #PID<0.123.0>}, {:error, :already_started}]
+  """
   @spec boot([service()]) :: [result()]
   def boot(services) when is_list(services) do
     Enum.map(services, fn
@@ -29,6 +48,8 @@ defmodule PoisonOS.Boot do
     end)
   end
 
+  @doc false
+  @spec start_and_log(module(), list(term())) :: result()
   defp start_and_log(mod, args) do
     result =
       case apply(mod, :start_link, args) do
