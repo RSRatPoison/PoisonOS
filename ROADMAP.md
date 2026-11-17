@@ -9,7 +9,7 @@ Pure data-structure modules come first because they are the easiest to get right
 process-based modules follow.
 
 - [x] Theme (`PoisonOS.Theme`): the colour palette as plain data. `colors()` returns the map `%{primary: "#00D000", highlight: "#28F030", shade: "#008000", accent: "#00A800", background: "#000000", text: "#E6E6E6", error: "#FF3B30", warning: "#FFC107"}`; `color(name)` returns `{:ok, hex_string}` or `:error`; `rgb(name)` returns `{:ok, {r, g, b}}` or `:error`.
-- [ ] Banner (`PoisonOS.Banner`): `logo()` returns the PoisonOS ASCII-art logo as a string of at most 12 lines, each at most 60 plain ASCII characters; `render(version)` returns `logo()`, a newline, then "PoisonOS " followed by the version string, all painted with `PoisonOS.Ansi.paint(text, :primary)`.
+- [x] Banner (`PoisonOS.Banner`): `logo()` returns the PoisonOS ASCII-art logo as a string of at most 12 lines, each at most 60 plain ASCII characters; `render(version)` returns `logo()`, a newline, then "PoisonOS " followed by the version string, all painted with `PoisonOS.Ansi.paint(text, :primary)`.
 - [ ] Shell prompt (`PoisonOS.Prompt`): `build(user, cwd)` returns the string "user@poisonos:cwd$ " with the user part painted `:primary` through `PoisonOS.Ansi.paint/2`; `build_plain(user, cwd)` returns the same string without any colour codes.
 - [x] Scheduler (`PoisonOS.Scheduler`): a pure round-robin scheduler struct with new, enqueue, next, tick and remove
 - [x] Memory manager (`PoisonOS.Memory`): a pure page-allocator simulation with new, alloc, free and stats
