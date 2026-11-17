@@ -7,9 +7,10 @@ defmodule PoisonOS.Env do
   ## Examples
 
       env = PoisonOS.Env.new()
-      env = PoisonOS.Env.set(env, "PATH", "/bin")
+      env = PoisonOS.Env.put(env, "PATH", "/bin")
       {:ok, value} = PoisonOS.Env.get(env, "PATH")
       env = PoisonOS.Env.delete(env, "PATH")
+      expanded = PoisonOS.Env.expand(env, "$PATH/home")
   """
 
   @type t :: %{String.t() => String.t()}
@@ -19,9 +20,14 @@ defmodule PoisonOS.Env do
   @spec new() :: t()
   def new, do: %{}
 
+  @spec put(t(), key(), value()) :: t()
+  def put(env, key, value) when is_binary(key) and is_binary(value) do
+    Map.put(env, key, value)
+  end
+
   @spec set(t(), key(), value()) :: t()
   def set(env, key, value) when is_binary(key) and is_binary(value) do
-    Map.put(env, key, value)
+    put(env, key, value)
   end
 
   @spec get(t(), key()) :: {:ok, value()} | :error
@@ -35,5 +41,13 @@ defmodule PoisonOS.Env do
   @spec delete(t(), key()) :: t()
   def delete(env, key) when is_binary(key) do
     Map.delete(env, key)
+  end
+
+  @spec expand(t(), String.t()) :: String.t()
+  def expand(env, text) when is_binary(text) do
+    text
+    |> String.replace(~r/\$([A-Za-z_][A-Za-z0-9_]*)/, fn _full, name ->
+      Map.get(env, name, "")
+    end)
   end
 end
