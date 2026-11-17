@@ -1,11 +1,16 @@
 defmodule PoisonOS.Banner do
   @moduledoc """
-  PoisonOS banner rendering.
+  Rendering utilities for the PoisonOS startup banner.
 
-  ## Functions
+  The banner consists of an ASCII‑art logo and a version line.  It is used
+  by the console during boot to give the user a visual cue that the
+  operating‑system layer has started.
 
-  * `logo/0` - Returns the PoisonOS ASCII-art logo as a string.
-  * `render/1` - Returns the logo followed by version information, painted with primary color.
+  Public API
+
+  * `logo/0/1` – Returns the raw logo string.
+  * `render/1` – Returns the logo together with the version string,
+    colourised with the primary colour defined in `PoisonOS.Ansi`.
   """
 
   @logo """
@@ -17,14 +22,16 @@ defmodule PoisonOS.Banner do
   """
 
   @doc """
-  Returns the PoisonOS ASCII-art logo as a string.
+  Returns the PoisonOS ASCII‑art logo as a plain string.
 
-  The logo is at most 12 lines, each at most 60 plain ASCII characters.
+  The logo contains at most twelve lines, each line no longer than sixty
+  plain ASCII characters.  Leading and trailing newlines are stripped so
+  the returned string can be concatenated directly with other text.
 
   ## Examples
 
       iex> PoisonOS.Banner.logo()
-      "   ____  ____  ____  ____  ____  ____  ____ \n  |  _ \\|  _ \\|  _ \\|  _ \\|  _ \\|  _ \\|  _ \\\n  | |_) | |_) | |_) | |_) | |_) | |_) | |_) |\n  |  __/|  __/|  __/|  __/|  __/|  __/|  __/ \n  |_|   |_|   |_|   |_|   |_|   |_|   |_|    "
+      "   ____  ____  ____  ____  ____  ____  ____ \\n  |  _ \\\\|  _ \\\\|  _ \\\\|  _ \\\\|  _ \\\\|  _ \\\\|  _ \\\\n  | |_) | |_) | |_) | |_) | |_) | |_) | |_) |\\n  |  __/|  __/|  __/|  __/|  __/|  __/|  __/ \\n  |_|   |_|   |_|   |_|   |_|   |_|   |_|    "
   """
   @spec logo() :: String.t()
   def logo do
@@ -34,13 +41,24 @@ defmodule PoisonOS.Banner do
   end
 
   @doc """
-  Returns the logo, a newline, then "PoisonOS " followed by the version string,
-  all painted with `PoisonOS.Ansi.paint(text, :primary)`.
+  Returns the full banner consisting of the logo, a newline, and the
+  version line `"PoisonOS <version>"`, colourised with the primary colour.
+
+  The colourisation is performed by `PoisonOS.Ansi.paint/2` using the
+  `:primary` style.
+
+  ## Parameters
+
+    * `version` – The version string to display after the `PoisonOS` prefix.
+
+  ## Returns
+
+  A single string ready for printing to the terminal.
 
   ## Examples
 
       iex> PoisonOS.Banner.render("0.1.0")
-      "\e[36m   ____  ____  ____  ____  ____  ____  ____ \n  |  _ \\|  _ \\|  _ \\|  _ \\|  _ \\|  _ \\|  _ \\\n  | |_) | |_) | |_) | |_) | |_) | |_) | |_) |\n  |  __/|  __/|  __/|  __/|  __/|  __/|  __/ \n  |_|   |_|   |_|   |_|   |_|   |_|   |_|    \nPoisonOS 0.1.0\e[0m"
+      "\\e[36m   ____  ____  ____  ____  ____  ____  ____ \\n  |  _ \\\\|  _ \\\\|  _ \\\\|  _ \\\\|  _ \\\\|  _ \\\\|  _ \\\\n  | |_) | |_) | |_) | |_) | |_) | |_) | |_) |\\n  |  __/|  __/|  __/|  __/|  __/|  __/|  __/ \\n  |_|   |_|   |_|   |_|   |_|   |_|   |_|    \\nPoisonOS 0.1.0\\e[0m"
   """
   @spec render(String.t()) :: String.t()
   def render(version) do
