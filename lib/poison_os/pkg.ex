@@ -15,9 +15,28 @@ defmodule PoisonOS.Pkg do
 
   use Agent
 
+  @typedoc "The name of a package."
   @type pkg_name :: String.t()
+
+  @typedoc "The version string of a package."
   @type version :: String.t()
+
+  @typedoc """
+  Options passed to the public functions.
+
+  Currently only the `:name` option is recognised. It specifies the name under
+  which the `Agent` process is registered. If omitted, the module name
+  `PoisonOS.Pkg` is used.
+  """
   @type opts :: Keyword.t()
+
+  @typedoc """
+  Reason for a failed `install/3` call.
+
+  * `:already_installed` – the package is already present in the registry.
+  * `:invalid_name` – either the package name or version is not a binary.
+  * `:invalid_version` – reserved for future validation of the version string.
+  """
   @type reason :: :already_installed | :invalid_name | :invalid_version
 
   @doc """
