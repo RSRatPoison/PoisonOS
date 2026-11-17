@@ -46,6 +46,9 @@ jobs:
           - name: builder-3
             role: builder
             provider: openrouter
+          - name: builder-5
+            role: builder
+            provider: zai
           - name: builder-4
             role: builder
             provider: groq
@@ -83,6 +86,8 @@ jobs:
           PROVIDER: ${{ matrix.provider }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          ZAI_MODEL: ${{ vars.ZAI_MODEL }}
           OPENROUTER_MODELS: ${{ vars.OPENROUTER_MODELS }}
           MODEL: ${{ matrix.model || vars.MODEL }}
           FALLBACK_MODEL: ${{ vars.FALLBACK_MODEL }}
