@@ -475,6 +475,8 @@ def call_model(messages):
                 data = json.loads(raw)
                 choice = data["choices"][0]
                 content = choice["message"].get("content")
+                if isinstance(content, str):  # some models put their reasoning inline
+                    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
                 finish = choice.get("finish_reason")
             except (ValueError, KeyError, IndexError, TypeError, AttributeError):
                 pass
