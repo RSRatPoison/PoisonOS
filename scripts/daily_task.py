@@ -87,6 +87,14 @@ PROVIDERS = {
         "context_chars": 16000,
         "optional": True,  # a missing key skips the job instead of failing it
     },
+    "zai": {
+        "url": "https://api.z.ai/api/paas/v4/chat/completions",
+        "key_env": "ZAI_API_KEY",
+        "models": [os.environ.get("ZAI_MODEL") or "glm-4.7-flash"],
+        "max_tokens": 8000,  # thinking tokens count against this limit
+        "context_chars": 16000,
+        "optional": True,
+    },
 }
 if PROVIDER not in PROVIDERS:
     sys.exit(f"Unknown provider: {PROVIDER}")
@@ -444,6 +452,8 @@ def call_model(messages):
                 payload["reasoning_effort"] = "low"
             if PROVIDER == "openrouter":
                 payload["reasoning"] = {"effort": "low"}
+            if PROVIDER == "zai":
+                payload["thinking"] = {"type": "disabled"}
             req = urllib.request.Request(
                 API_URL,
                 data=json.dumps(payload).encode(),
