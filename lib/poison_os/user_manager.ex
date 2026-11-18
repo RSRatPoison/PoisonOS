@@ -1,10 +1,10 @@
 defmodule PoisonOS.UserManager do
   @moduledoc """
-  A simple in‑memory user manager.
+  In‑memory user manager.
 
   The manager stores usernames together with a numeric identifier and a
-  password hash (the password is stored as‑is for the purpose of this
-  educational OS layer).  It runs as an `Agent` holding a map with two keys:
+  password (stored as‑is for this educational OS layer).  It runs as an
+  `Agent` holding a map with two keys:
 
   * `:next_id` – the next user identifier to assign.
   * `:users` – a map where the key is the username (`String.t/0`) and the value
@@ -23,10 +23,19 @@ defmodule PoisonOS.UserManager do
 
   use Agent
 
+  @typedoc "Username string."
   @type username :: String.t()
+
+  @typedoc "Password string."
   @type password :: String.t()
+
+  @typedoc "Numeric identifier for a user."
   @type user_id :: non_neg_integer()
+
+  @typedoc "Keyword options passed to public functions."
   @type opts :: Keyword.t()
+
+  @typedoc "Reason for a failure."
   @type reason :: term()
 
   @doc """
@@ -41,9 +50,10 @@ defmodule PoisonOS.UserManager do
     * `:name` – the name to register the `Agent` under (defaults to
       `PoisonOS.UserManager`).
 
-  Returns `{:ok, pid}` on success.
+  Returns `{:ok, pid}` on success or `{:error, term}` if the process cannot be
+  started.
   """
-  @spec start_link(opts()) :: {:ok, pid()}
+  @spec start_link(opts()) :: {:ok, pid()} | {:error, term()}
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, __MODULE__)
     Agent.start_link(fn -> %{next_id: 1, users: %{}} end, name: name)
@@ -66,8 +76,8 @@ defmodule PoisonOS.UserManager do
   ## Return values
 
     * `{:ok, user_id}` – the user was created successfully.
-    * `{:error, reason}` – the username already exists (`reason` will be `:exists`).
-
+    * `{:error, reason}` – the username already exists (`reason` will be
+      `:exists`).
   """
   @spec create(username(), password(), opts()) :: {:ok, user_id()} | {:error, reason()}
   def create(username, password, opts \\ []) do
