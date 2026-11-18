@@ -1,14 +1,14 @@
 defmodule PoisonOS.Banner do
   @moduledoc """
-  Rendering utilities for the PoisonOS startup banner.
+  Utilities for rendering the PoisonOS startup banner.
 
-  The banner consists of an ASCII‑art logo and a version line.  It is used
-  by the console during boot to give the user a visual cue that the
-  operating‑system layer has started.
+  The banner consists of an ASCII‑art logo and a version line. It is used by
+  the console during boot to give the user a visual cue that the operating‑system
+  layer has started.
 
-  Public API
+  ## Public API
 
-  * `logo/0/1` – Returns the raw logo string.
+  * `logo/0` – Returns the raw logo string.
   * `render/1` – Returns the logo together with the version string,
     colourised with the primary colour defined in `PoisonOS.Ansi`.
   """
@@ -25,8 +25,8 @@ defmodule PoisonOS.Banner do
   Returns the PoisonOS ASCII‑art logo as a plain string.
 
   The logo contains at most twelve lines, each line no longer than sixty
-  plain ASCII characters.  Leading and trailing newlines are stripped so
-  the returned string can be concatenated directly with other text.
+  plain ASCII characters. Leading and trailing newlines are stripped so the
+  returned string can be concatenated directly with other text.
 
   ## Examples
 
