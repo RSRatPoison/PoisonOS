@@ -2,8 +2,9 @@ defmodule PoisonOS.Config do
   @moduledoc """
   Configuration manager for PoisonOS.
 
-  Loads configuration from a simple key=value file format (similar to .env files).
-  Lines starting with `#` are treated as comments and ignored. Empty lines are skipped.
+  Loads configuration from a simple `key=value` file format (similar to `.env` files).
+  Lines starting with `#` are treated as comments and ignored. Empty lines are
+  skipped.
 
   ## Examples
 
@@ -11,15 +12,18 @@ defmodule PoisonOS.Config do
       value = PoisonOS.Config.get(config, "database_url", "localhost")
   """
 
-  @type config :: map()
+  @type config :: %{optional(String.t()) => String.t()}
   @type key :: String.t()
   @type value :: String.t() | nil
 
   @doc """
-  Loads configuration from a file at the given path.
+  Loads configuration from a file at the given `path`.
 
   Returns `{:ok, config}` where `config` is a map of string keys to string values,
-  or `{:error, reason}` if the file cannot be read or parsed.
+  or `{:error, reason}` if the file cannot be read.
+
+  The file is expected to contain one `key=value` pair per line. Lines that are
+  empty or start with `#` are ignored.
   """
   @spec load(String.t()) :: {:ok, config()} | {:error, term()}
   def load(path) do
@@ -35,14 +39,16 @@ defmodule PoisonOS.Config do
   @doc """
   Retrieves a value from the configuration map.
 
-  Returns the value for `key` if present, otherwise returns `default` (which defaults to `nil`).
+  Returns the value for `key` if present, otherwise returns `default`. The
+  default defaults to `nil` when not supplied.
   """
   @spec get(config(), key(), value()) :: value()
   def get(config, key, default \\ nil) do
     Map.get(config, key, default)
   end
 
-  # Internal parsing function
+  @doc false
+  @spec parse(String.t()) :: config()
   defp parse(contents) do
     contents
     |> String.split("\n", trim: true)
@@ -50,7 +56,7 @@ defmodule PoisonOS.Config do
       line = String.trim(line)
 
       cond do
-        line == "" || String.starts_with?(line, "#") ->
+        line == "" or String.starts_with?(line, "#") ->
           acc
 
         true ->
