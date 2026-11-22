@@ -1,0 +1,35 @@
+name: Try PoisonOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      commands:
+        description: "Commands to run, separated by semicolons. Example: mkdir /tmp/a; ls /tmp; calc 2 + 3 * 4"
+        required: true
+        default: "help; pwd; ls /"
+
+permissions:
+  contents: read
+
+jobs:
+  try:
+    name: Run commands
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "27"
+          elixir-version: "1.18"
+
+      - name: Run the commands in a fresh PoisonOS
+        env:
+          COMMANDS: ${{ inputs.commands }}
+        run: |
+          mix run --no-start -e '
+          lines = "COMMANDS" |> System.fetch_env!() |> String.split(";") |> Enum.map(&String.trim/1)
+          {transcript, _machine} = PoisonOS.REPL.session(PoisonOS.Machine.new(), lines)
+          IO.puts(transcript)
+          '
