@@ -48,7 +48,7 @@ process-based modules follow.
 - [x] Simple HTTP client (`PoisonOS.HTTP`): `get(url)` returns `{:ok, status_code, headers, body}` or `{:error, reason}`; `post(url, body, headers \\ [])` returns same shape.
 - [x] Clipboard history (`PoisonOS.Clipboard.History`): maintain a list of recent clipboard entries with `new(limit)`; `push(history, text)` adds entry, dropping oldest if limit exceeded; `list(history)` returns `[text]` in most-recent-first order.
 - [x] Process signals (`PoisonOS.Signal`): register signal handlers with `register(pid, signal, fun)` returning `:ok`; send signals with `send(pid, signal)` returning `:ok` or `{:error, :noproc}`; list handlers with `list(pid)` returning `[{signal, fun}]`.
-- [ ] Process groups (`PoisonOS.ProcessGroup`): create groups with `new()`; add a pid with `add(group, pid)` returning updated group; remove a pid with `remove(group, pid)`; list members with `members(group)` returning `[pid]`.
+- [x] Process groups (`PoisonOS.ProcessGroup`): create groups with `new()`; add a pid with `add(group, pid)` returning updated group; remove a pid with `remove(group, pid)`; list members with `members(group)` returning `[pid]`.
 - [ ] Disk quota manager (`PoisonOS.DiskQuota`): track usage per user with `new(limit_map)` where limit_map is `%{user => bytes}`; `charge(quota, user, bytes)` returns `{:ok, new_quota}` or `{:error, :exceeded}`; `available(quota, user)` returns remaining bytes.
 - [ ] Simple DNS resolver (`PoisonOS.DNS`): resolve hostnames with `resolve(name)` returning `{:ok, ip}` or `{:error, :not_found}`; cache results internally.
 - [ ] Clipboard (`PoisonOS.Clipboard`): store a single string with `set(text)` and retrieve with `get()` returning `{:ok, text}` or `:empty`.
