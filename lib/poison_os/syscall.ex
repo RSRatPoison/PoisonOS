@@ -30,6 +30,14 @@ defmodule PoisonOS.Syscall do
   """
   @type t :: %{fs: PoisonOS.FS.t(), mem: PoisonOS.Memory.t()}
 
+  @typedoc """
+  Identifier of an allocated memory page.
+
+  The concrete type is defined by `PoisonOS.Memory.alloc/1` and is treated as an
+  opaque term by the syscall façade.
+  """
+  @type page :: term()
+
   @doc """
   Creates a fresh syscall state.
 
@@ -68,7 +76,7 @@ defmodule PoisonOS.Syscall do
     * `{:ok, page, new_state}` on success.
     * `{:error, :no_memory}` when allocation fails.
   """
-  @spec alloc(t()) :: {:ok, any(), t()} | {:error, :no_memory}
+  @spec alloc(t()) :: {:ok, page(), t()} | {:error, :no_memory}
   def alloc(%{mem: mem} = state) do
     case PoisonOS.Memory.alloc(mem) do
       {:error, _reason} ->
