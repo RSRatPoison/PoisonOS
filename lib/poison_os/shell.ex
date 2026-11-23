@@ -13,6 +13,9 @@ defmodule PoisonOS.Shell do
     * `ls` – Lists entries in a directory; output is the entry names joined by
       newlines.
     * `cat` – Returns the contents of a file.
+    * `write` – Writes text to a file.
+    * `rm` – Removes a file or directory.
+    * `touch` – Creates an empty file if it does not exist.
 
   Any other command results in an error.
 
@@ -60,8 +63,11 @@ defmodule PoisonOS.Shell do
 
     * `"echo"` – `args` are joined with a single space; filesystem is unchanged.
     * `"mkdir"` – expects a single argument `path`; creates the directory.
-    * `"ls"` – expects a single argument `path`; lists entries in the directory.
+    * `"ls"` – optional argument `path` (defaults to `"/"`); lists entries.
     * `"cat"` – expects a single argument `path`; returns the file contents.
+    * `"write"` – expects `path` followed by text; writes the text to the file.
+    * `"rm"` – expects a single argument `path`; removes the file or directory.
+    * `"touch"` – expects a single argument `path`; creates an empty file if it does not exist.
 
   Any other command results in `{:error, "unknown command", fs}`.
 
@@ -81,30 +87,82 @@ defmodule PoisonOS.Shell do
   end
 
   def exec("mkdir", [path], fs) when is_binary(path) do
-    case PoisonOS.FS.mkdir(path, fs) do
+    path_list = PoisonOS.Path.split(path)
+
+    case PoisonOS.FS.mkdir(path_list, fs) do
       {:ok, new_fs} -> {:ok, "", new_fs}
-      {:error, reason, _} -> {:error, to_string(reason), fs}
+      {:error, reason} -> {:error, to_string(reason), fs}
     end
   end
 
-  def exec("ls", [path], fs) when is_binary(path) do
-    case PoisonOS.FS.ls(path, fs) do
-      {:ok, entries, _} when is_list(entries) ->
-        output = Enum.join(entries, "\n")
-        {:ok, output, fs}
+  def exec("ls", args, fs) when is_list(args) do
+    path =
+      case args do
+        [] -> "/"
+        [p] -> p
+        _ -> nil
+      end
 
-      {:error, reason, _} ->
-        {:error, to_string(reason), fs}
+    if is_binary(path) do
+      path_list = PoisonOS.Path.split(path)
+
+      case PoisonOS.FS.ls(path_list, fs) do
+        {:ok, entries} when is_list(entries) ->
+          output = Enum.join(entries, "\n")
+          {:ok, output, fs}
+
+        {:error, reason} ->
+          {:error, to_string(reason), fs}
+      end
+    else
+      {:error, "unknown command", fs}
     end
   end
 
   def exec("cat", [path], fs) when is_binary(path) do
-    case PoisonOS.FS.read(path, fs) do
-      {:ok, content, _} when is_binary(content) -> {:ok, content, fs}
-      {:error, reason, _} -> {:error, to_string(reason), fs}
+    path_list = PoisonOS.Path.split(path)
+
+    case PoisonOS.FS.read(path_list, fs) do
+      {:ok, content} when is_binary(content) -> {:ok, content, fs}
+      {:error, reason} -> {:error, to_string(reason), fs}
     end
   end
 
+  def exec("write", [path | rest], fs) when is_binary(path) do
+    content = Enum.join(rest, " ")
+    path_list = PoisonOS.Path.split(path)
+
+    case PoisonOS.FS.write(path_list, content, fs) do
+      {:ok, new_fs} -> {:ok, "", new_fs}
+      {:error, reason} -> {:error, to_string(reason), fs}
+    end
+  end
+
+  def exec("rm", [path], fs) when is_binary(path) do
+    path_list = PoisonOS.Path.split(path)
+
+    case PoisonOS.FS.rm(path_list, fs) do
+      {:ok, new_fs} -> {:ok, "", new_fs}
+      {:error, reason} -> {:error, to_string(reason), fs}
+    end
+  end
+
+  def exec("touch", [path], fs) when is_binary(path) do
+    path_list = PoisonOS.Path.split(path)
+
+    case PoisonOS.FS.read(path_list, fs) do
+      {:ok, _content} ->
+        {:ok, "", fs}
+
+      {:error, _reason} ->
+        case PoisonOS.FS.write(path_list, "", fs) do
+          {:ok, new_fs} -> {:ok, "", new_fs}
+          {:error, reason} -> {:error, to_string(reason), fs}
+        end
+    end
+  end
+
+  # Catch‑all for unknown commands or malformed arguments
   def exec(_command, _args, fs) do
     {:error, "unknown command", fs}
   end
