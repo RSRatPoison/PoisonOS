@@ -11,6 +11,7 @@ defmodule PoisonOS.Env do
       {:ok, value} = PoisonOS.Env.get(env, "PATH")
       env = PoisonOS.Env.delete(env, "PATH")
       expanded = PoisonOS.Env.expand(env, "$PATH/home")
+      list = PoisonOS.Env.to_list(env)
   """
 
   @type t :: %{String.t() => String.t()}
@@ -49,5 +50,12 @@ defmodule PoisonOS.Env do
     |> String.replace(~r/\$([A-Za-z_][A-Za-z0-9_]*)/, fn _full, name ->
       Map.get(env, name, "")
     end)
+  end
+
+  @spec to_list(t()) :: [{key(), value()}]
+  def to_list(env) when is_map(env) do
+    env
+    |> Enum.to_list()
+    |> Enum.sort_by(fn {k, _v} -> k end)
   end
 end
