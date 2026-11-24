@@ -1,24 +1,24 @@
 defmodule PoisonOS.IPC do
   @moduledoc """
-  Simple inter‑process communication server.
+  Simple inter‑process communication (IPC) server.
 
   The server maintains a set of named mailboxes. Each mailbox stores
-  messages in FIFO order.
+  messages in FIFO order using Erlang's `:queue` module.
 
   ## Public API
 
-    * `start_link(opts \\ [])` – starts the IPC server. The `:name`
-      option can be used to register the process (default `:poison_ipc`).
+  * `start_link/1` – Starts the IPC server. The `:name` option can be
+    used to register the process (default `:poison_ipc`).
 
-    * `send(server, mailbox, msg)` – appends `msg` to `mailbox`.
+  * `send/3` – Appends a message to a mailbox.
 
-    * `receive(server, mailbox)` – removes and returns the oldest
-      message from `mailbox`. Returns `{:ok, msg}` or `:empty`.
+  * `receive/2` – Removes and returns the oldest message from a mailbox.
+    Returns `{:ok, msg}` when a message is available or `:empty` when the
+    mailbox does not exist or contains no messages.
 
-    * `broadcast(server, msg)` – appends `msg` to **all** existing
-      mailboxes.
+  * `broadcast/2` – Appends a message to **all** existing mailboxes.
 
-  All functions are pure wrappers around `GenServer` calls.
+  All functions are thin wrappers around `GenServer` calls.
   """
 
   use GenServer
@@ -27,22 +27,46 @@ defmodule PoisonOS.IPC do
   @type message :: term()
   @type state :: %{optional(mailbox()) => :queue.queue()}
 
+  @doc """
+  Starts the IPC server.
+
+  ## Options
+
+    * `:name` – the registered name of the server (default `:poison_ipc`).
+
+  Returns `{:ok, pid}` on success or `{:error, reason}` on failure.
+  """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts \\ []) do
     name = Keyword.get(opts, :name, :poison_ipc)
     GenServer.start_link(__MODULE__, %{}, name: name)
   end
 
+  @doc """
+  Appends `msg` to the mailbox identified by `mailbox`.
+
+  Returns `:ok`.
+  """
   @spec send(GenServer.server(), mailbox(), message()) :: :ok
   def send(server, mailbox, msg) do
     GenServer.cast(server, {:send, mailbox, msg})
   end
 
+  @doc """
+  Retrieves the oldest message from `mailbox`.
+
+  Returns `{:ok, msg}` if a message is present, otherwise `:empty`.
+  """
   @spec receive(GenServer.server(), mailbox()) :: {:ok, message()} | :empty
   def receive(server, mailbox) do
     GenServer.call(server, {:receive, mailbox})
   end
 
+  @doc """
+  Appends `msg` to **all** existing mailboxes.
+
+  Returns `:ok`.
+  """
   @spec broadcast(GenServer.server(), message()) :: :ok
   def broadcast(server, msg) do
     GenServer.cast(server, {:broadcast, msg})
