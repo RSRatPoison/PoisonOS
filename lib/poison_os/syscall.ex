@@ -1,28 +1,26 @@
 defmodule PoisonOS.Syscall do
   @moduledoc """
-  A pure‑function façade for the core OS services.
+  Pure‑function façade for core OS services.
 
   The syscall layer works with a simple map that represents the current
-  operating‑system state.  The map contains a virtual filesystem (`fs`) and a
-  memory manager (`mem`).  All functions are pure: they receive a state map and
-  return either a value or a new state map without side‑effects.  This makes the
+  operating‑system state. The map contains a virtual filesystem (`fs`) and a
+  memory manager (`mem`). All functions are pure: they receive a state map and
+  return either a value or a new state map without side‑effects. This makes the
   API easy to test and reason about.
 
   The module deliberately does **not** start any processes; it only forwards
-  calls to the underlying modules (`PoisonOS.FS` and `PoisonOS.Memory`).  The
+  calls to the underlying modules (`PoisonOS.FS` and `PoisonOS.Memory`). The
   returned state can be passed to subsequent calls.
 
   ## Public API
 
   * `new/0` – creates an initial syscall state with a fresh filesystem and a
     memory manager configured with 16 pages of 4096 bytes each.
-
   * `alloc/1` – allocates a memory page from the manager stored in the state.
     Returns `{:ok, page, new_state}` on success or `{:error, :no_memory}` when
     the memory manager cannot satisfy the request.
-
   * `mem_stats/1` – returns the statistics of the memory manager stored in the
-    state.  The result is exactly what `PoisonOS.Memory.stats/1` returns.
+    state. The result is exactly what `PoisonOS.Memory.stats/1` returns.
   """
 
   @typedoc """
