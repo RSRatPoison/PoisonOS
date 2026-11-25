@@ -1,13 +1,16 @@
 defmodule PoisonOS.Syscall do
   @moduledoc """
-  Syscall façade – a thin, pure‑function wrapper around the core services.
+  A pure‑function façade for the core OS services.
 
-  The module works with a simple map that represents the current OS state.
-  The map contains a virtual filesystem (`fs`) and a memory manager (`mem`).
+  The syscall layer works with a simple map that represents the current
+  operating‑system state.  The map contains a virtual filesystem (`fs`) and a
+  memory manager (`mem`).  All functions are pure: they receive a state map and
+  return either a value or a new state map without side‑effects.  This makes the
+  API easy to test and reason about.
 
-  All functions are pure and return a new state map when they modify the
-  underlying services. This makes the API easy to test and reason about
-  without dealing with processes.
+  The module deliberately does **not** start any processes; it only forwards
+  calls to the underlying modules (`PoisonOS.FS` and `PoisonOS.Memory`).  The
+  returned state can be passed to subsequent calls.
 
   ## Public API
 
@@ -19,7 +22,7 @@ defmodule PoisonOS.Syscall do
     the memory manager cannot satisfy the request.
 
   * `mem_stats/1` – returns the statistics of the memory manager stored in the
-    state. The result is exactly what `PoisonOS.Memory.stats/1` returns.
+    state.  The result is exactly what `PoisonOS.Memory.stats/1` returns.
   """
 
   @typedoc """
@@ -63,9 +66,9 @@ defmodule PoisonOS.Syscall do
   @doc """
   Allocates a page from the memory manager stored in the given state.
 
-  Returns `{:ok, page, new_state}` where `page` is the allocated page
-  identifier and `new_state` is the updated syscall state. If the memory
-  manager cannot allocate a page, returns `{:error, :no_memory}`.
+  Returns `{:ok, page, new_state}` where `page` is the allocated page identifier
+  and `new_state` is the updated syscall state. If the memory manager cannot
+  allocate a page, returns `{:error, :no_memory}`.
 
   ## Parameters
 
