@@ -101,8 +101,7 @@ defmodule PoisonOS.Procs do
   returned in the `finished` list. The function returns `{finished,
   table}`.
   """
-  @spec step(t()) ::
-          {list(short_record()), t()}
+  @spec step(t()) :: {list(short_record()), t()}
   def step(%__MODULE__{order: []} = table) do
     {[], table}
   end
