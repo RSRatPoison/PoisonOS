@@ -166,6 +166,7 @@ Elixir rules (these mistakes have broken earlier runs):
 - Tests must not depend on global state or on test order. Never call Application.start or Application.stop for :poison_os, and never use a process name that another test also uses. Start your own instances under unique names.
 - Decide the exact return value of every public function first and write it in the @moduledoc, for example `lookup(table, name)` returns `{:ok, record}` or `:error`. The code and the tests must both match that text exactly. If the task names functions or return values, use exactly those.
 - For a unique process name in a test use `name = :"proc_#{System.unique_integer([:positive])}"`. Never interpolate a pid, reference, tuple or map into a string; convert it with inspect/1 if you must.
+- Tests that need a file on the host must create it under System.tmp_dir!() with a unique name and remove it with on_exit. Never write files into the project directory.
 - Never call PoisonOS.Application.start/2 or Supervisor.start_link with the application's name in tests: the application is already running while tests run, so it returns {:error, {:already_started, pid}}.
 - Never put #{...} interpolation inside @moduledoc or @doc text (it is evaluated at compile time). Write examples without interpolation.
 - Keep the module small. Fewer features that work beat many that do not.
@@ -293,7 +294,9 @@ def gather_context(focus=()):
         used += len(block)
     digests = [api_digest(f) for f in files if f.startswith("lib/") and f.endswith(".ex") and f not in focus]
     parts.append("".join(digests)[: max(MAX_CONTEXT_CHARS // 3, 1500)])
-    return "\n".join(files), "".join(parts)
+    tests = [f for f in files if f.startswith("test/")]
+    tree = [f for f in files if not f.startswith("test/")][:120] + [f"test/ ({len(tests)} test files, named after the module they test)"]
+    return "\n".join(tree), "".join(parts)
 
 
 # ---------------------------------------------------------------- roles
@@ -439,7 +442,11 @@ def retry_delay(detail):
     return 20
 
 
+TOO_LARGE = object()
+
+
 def call_model(messages):
+    too_large = False
     for model in MODELS:
         for attempt in range(3):
             payload = {
@@ -470,6 +477,8 @@ def call_model(messages):
             except urllib.error.HTTPError as e:
                 detail = e.read().decode(errors="replace")[:600]
                 print(f"{model}: HTTP {e.code} {detail[:300]}")
+                if e.code == 413:
+                    too_large = True
                 if e.code == 429 and attempt < 2:
                     delay = retry_delay(detail)
                     if delay is not None:
@@ -495,7 +504,7 @@ def call_model(messages):
             usage = data.get("usage") if isinstance(data, dict) else None
             print(f"{model}: no usable content (finish_reason={finish}, usage={usage}); body starts {raw.strip()[:200]!r}")
             break
-    return None
+    return TOO_LARGE if too_large else None
 
 
 FILE_RE = re.compile(
@@ -580,6 +589,30 @@ def apply_and_check(plan, job, lenient=False):
     return None
 
 
+ROOT_KEEP = {"README.md", "ROADMAP.md", "mix.exs", "mix.lock", ".formatter.exs", ".gitignore", "LICENSE"}
+
+
+def stray_files():
+    """Files in the repository root that do not belong there (for example temp files left by tests)."""
+    files = run(["git", "ls-files", "--cached", "--others", "--exclude-standard"])[1].split("\n")
+    return [f for f in files if f and "/" not in f and f not in ROOT_KEEP]
+
+
+def remove_strays():
+    """Delete stray root files from disk and from git. Returns True if anything tracked was removed."""
+    strays = stray_files()
+    tracked = set(run(["git", "ls-files"])[1].split("\n"))
+    for f in strays:
+        try:
+            (ROOT / f).unlink()
+        except OSError:
+            pass
+    gone = [f for f in strays if f in tracked]
+    for i in range(0, len(gone), 200):
+        run(["git", "rm", "-q", "--cached", "--ignore-unmatch", "--"] + gone[i : i + 200])
+    return bool(gone)
+
+
 def reset_worktree():
     run(["git", "reset", "--hard", "HEAD"])
     run(["git", "clean", "-fd"])
@@ -645,12 +678,16 @@ def commit_message(model_msg, fallback, first_attempt):
 
 
 def main():
+    global MAX_CONTEXT_CHARS
     if ONLY_ROLE not in ("all", ROLE):
         print(f"Role '{ROLE}' skipped (only '{ONLY_ROLE}' was requested).")
         return 0
     if ROLE not in PICKERS:
         print(f"Unknown role: {ROLE}")
         return 1
+    if remove_strays():
+        run(["git", "commit", "-q", "-m", "Remove stray files from the repository root"])
+        print("Removed stray files from the repository root.")
     job = PICKERS[ROLE]()
     if not job:
         print(f"Role '{ROLE}': nothing to do right now.")
@@ -670,24 +707,34 @@ def main():
         print(f"Attempt {attempt}")
         # Rebuild the prompt from what is on disk right now. Files written by an
         # earlier attempt stay in place, so the model can fix just one file.
-        tree, context = gather_context(list(job["focus"]) + sorted(WRITTEN))
-        if job.get("planner"):
-            context = f"Current ROADMAP.md:\n{read('ROADMAP.md')}"
-        content = f"Task: {task}\n\nRepository files:\n{tree}\n\nCode (full source of the files being worked on, API summary of the rest):\n{context}"
-        if error:
-            content += (
-                f"\n\nYour previous attempt failed:\n{error}\n\n"
-                "Fix it. The files above are exactly what is on disk. Send only the files "
-                "you need to change, each one complete, using the same paths as before. If a test "
-                "fails because it expects a different return value than the code returns, decide "
-                "which side is wrong, keep the return shape documented in the @moduledoc, and change "
-                "only the side that disagrees with it. Do not change return shapes otherwise."
-            )
-        reply = call_model([{"role": "system", "content": system}, {"role": "user", "content": content}])
+        for _ in range(4):
+            tree, context = gather_context(list(job["focus"]) + sorted(WRITTEN))
+            if job.get("planner"):
+                context = f"Current ROADMAP.md:\n{read('ROADMAP.md')}"
+            content = f"Task: {task}\n\nRepository files:\n{tree}\n\nCode (full source of the files being worked on, API summary of the rest):\n{context}"
+            if error:
+                content += (
+                    f"\n\nYour previous attempt failed:\n{error}\n\n"
+                    "Fix it. The files above are exactly what is on disk. Send only the files "
+                    "you need to change, each one complete, using the same paths as before. If a test "
+                    "fails because it expects a different return value than the code returns, decide "
+                    "which side is wrong, keep the return shape documented in the @moduledoc, and change "
+                    "only the side that disagrees with it. Do not change return shapes otherwise."
+                )
+            reply = call_model([{"role": "system", "content": system}, {"role": "user", "content": content}])
+            if reply is not TOO_LARGE:
+                break
+            smaller = max(int(MAX_CONTEXT_CHARS * 0.6), 1200)
+            if smaller == MAX_CONTEXT_CHARS:
+                break
+            print(f"Request too large for the provider; retrying with a smaller context ({smaller} characters).")
+            MAX_CONTEXT_CHARS = smaller
+        if reply is TOO_LARGE:
+            reply = None
         if reply is None:
             reset_worktree()
-            print("No model available (rate limit or outage). Nothing committed.")
-            return 1
+            print("::warning::No model available (rate limit, overload or outage). Nothing committed.")
+            return 0
         try:
             plan = parse_reply(reply)
             error = apply_and_check(plan, job, lenient=(attempt == MAX_ATTEMPTS or ROLE == "tester"))
@@ -709,6 +756,7 @@ def main():
         job["after"]()
     msg = commit_message(plan.get("commit_message"), job["fallback"], attempt == 1)
 
+    remove_strays()
     run(["git", "add", "-A"])
     if not run(["git", "status", "--porcelain"])[1].strip():
         print("No changes to commit.")
